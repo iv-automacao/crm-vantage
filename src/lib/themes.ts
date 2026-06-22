@@ -14,6 +14,7 @@
  */
 
 export const THEME_IDS = [
+  "vantage",
   "violet",
   "emerald",
   "cobalt",
@@ -23,7 +24,7 @@ export const THEME_IDS = [
 
 export type ThemeId = (typeof THEME_IDS)[number];
 
-export const DEFAULT_THEME: ThemeId = "violet";
+export const DEFAULT_THEME: ThemeId = "vantage";
 
 export const STORAGE_KEY = "wacrm.theme";
 
@@ -67,6 +68,12 @@ export interface ThemeMeta {
 }
 
 export const THEMES: ReadonlyArray<ThemeMeta> = [
+  {
+    id: "vantage",
+    name: "VANTAGE",
+    tagline: "Azul oficial da marca VANTAGE.",
+    swatch: "oklch(0.62 0.13 237)",
+  },
   {
     id: "violet",
     name: "Violeta",

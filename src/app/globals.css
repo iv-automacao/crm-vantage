@@ -161,6 +161,35 @@ html[data-theme="violet"] {
   --sidebar-ring: oklch(0.526 0.247 293);
 }
 
+/* VANTAGE — azul da marca (#3391C5 ≈ oklch(0.62 0.13 237)). Tema padrão. */
+html[data-theme="vantage"] {
+  --primary: oklch(0.62 0.13 237);
+  --primary-foreground: oklch(0.985 0 0);
+  --primary-hover: oklch(0.68 0.12 237);
+  --primary-soft: oklch(0.62 0.13 237 / 0.12);
+  --primary-soft-2: oklch(0.62 0.13 237 / 0.22);
+  --ring: oklch(0.62 0.13 237);
+  --chart-1: oklch(0.62 0.13 237);
+  --chart-2: oklch(0.72 0.12 210);
+  --sidebar-primary: oklch(0.62 0.13 237);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-ring: oklch(0.62 0.13 237);
+}
+
+/* No modo claro, aprofunda o azul pra manter contraste legível (AA) sobre branco. */
+html[data-theme="vantage"][data-mode="light"] {
+  --primary: oklch(0.54 0.14 240);
+  --primary-foreground: oklch(0.985 0 0);
+  --primary-hover: oklch(0.48 0.14 240);
+  --primary-soft: oklch(0.54 0.14 240 / 0.12);
+  --primary-soft-2: oklch(0.54 0.14 240 / 0.2);
+  --ring: oklch(0.54 0.14 240);
+  --chart-1: oklch(0.54 0.14 240);
+  --sidebar-primary: oklch(0.54 0.14 240);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-ring: oklch(0.54 0.14 240);
+}
+
 html[data-theme="emerald"] {
   --primary: oklch(0.62 0.16 162);
   --primary-foreground: oklch(0.16 0.02 162);
