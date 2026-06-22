@@ -24,7 +24,7 @@ export const ROLE_META: Record<
 > = {
   owner: {
     icon: Crown,
-    label: 'Owner',
+    label: 'Dono',
     variant: 'owner',
     className: 'border-amber-500/40 bg-amber-500/10 text-amber-300',
   },
@@ -36,13 +36,13 @@ export const ROLE_META: Record<
   },
   agent: {
     icon: UserCog,
-    label: 'Agent',
+    label: 'Atendente',
     variant: 'muted',
     className: 'border-border bg-muted text-muted-foreground',
   },
   viewer: {
     icon: UserIcon,
-    label: 'Viewer',
+    label: 'Visualizador',
     variant: 'muted',
     // Outline-only so it stays quieter than the filled Agent chip in
     // both modes — bg-card would blend into a card surface in light mode.

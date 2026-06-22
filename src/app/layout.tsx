@@ -20,10 +20,10 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "wacrm",
-    template: "%s — wacrm",
+    default: "VANTAGE CRM",
+    template: "%s — VANTAGE CRM",
   },
-  description: "Self-hostable CRM template for WhatsApp.",
+  description: "CRM e atendimento omnichannel no WhatsApp.",
   robots: {
     index: false,
     follow: false,
@@ -82,7 +82,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="pt-BR"
       data-theme={DEFAULT_THEME}
       data-mode={DEFAULT_MODE}
       className={`${inter.variable} h-full antialiased`}

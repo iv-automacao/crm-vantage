@@ -19,13 +19,14 @@ import {
 import { ModeToggle } from "@/components/layout/mode-toggle";
 
 const pageTitles: Record<string, string> = {
-  "/dashboard": "Dashboard",
-  "/inbox": "Inbox",
-  "/contacts": "Contacts",
-  "/pipelines": "Pipelines",
-  "/broadcasts": "Broadcasts",
-  "/automations": "Automations",
-  "/settings": "Settings",
+  "/dashboard": "Painel",
+  "/inbox": "Caixa de entrada",
+  "/contacts": "Contatos",
+  "/pipelines": "Funis",
+  "/broadcasts": "Disparos",
+  "/automations": "Automações",
+  "/flows": "Fluxos",
+  "/settings": "Configurações",
 };
 
 function getPageTitle(pathname: string): string {
@@ -59,7 +60,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
         <button
           type="button"
           onClick={onOpenSidebar}
-          aria-label="Open menu"
+          aria-label="Abrir menu"
           className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden"
         >
           <Menu className="h-5 w-5" />
@@ -75,7 +76,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
         <DropdownMenu>
         <DropdownMenuTrigger
           className="flex items-center gap-2 rounded-md px-1 py-1 transition-colors hover:bg-muted/70 focus:bg-muted/70 focus:outline-none data-popup-open:bg-muted/70 sm:gap-3 sm:pl-1 sm:pr-3"
-          aria-label="Open account menu"
+          aria-label="Abrir menu da conta"
         >
           <Avatar className="size-8">
             {profile?.avatar_url ? (
@@ -89,7 +90,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
             </AvatarFallback>
           </Avatar>
           <span className="hidden text-sm font-medium text-foreground sm:inline">
-            {profile?.full_name ?? "User"}
+            {profile?.full_name ?? "Usuário"}
           </span>
         </DropdownMenuTrigger>
         <DropdownMenuContent
@@ -99,7 +100,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
         >
           <div className="px-2 py-1.5">
             <p className="truncate text-sm font-medium text-foreground">
-              {profile?.full_name ?? "User"}
+              {profile?.full_name ?? "Usuário"}
             </p>
             <p className="truncate text-xs text-muted-foreground">
               {profile?.email ?? ""}
@@ -115,7 +116,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
             }
           >
             <User className="size-4" />
-            Profile
+            Perfil
           </DropdownMenuItem>
           <DropdownMenuItem
             render={
@@ -126,7 +127,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
             }
           >
             <SettingsIcon className="size-4" />
-            Settings
+            Configurações
           </DropdownMenuItem>
           <DropdownMenuSeparator className="bg-border" />
           <DropdownMenuItem
@@ -134,7 +135,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
             className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
           >
             <LogOut className="size-4" />
-            Sign out
+            Sair
           </DropdownMenuItem>
         </DropdownMenuContent>
         </DropdownMenu>

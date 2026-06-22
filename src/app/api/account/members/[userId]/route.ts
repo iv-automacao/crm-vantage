@@ -37,7 +37,7 @@ function rpcErrorToResponse(err: PostgrestError): NextResponse {
   }
   console.error("[members route] unexpected RPC error:", err);
   return NextResponse.json(
-    { error: "Failed to update member" },
+    { error: "Falha ao atualizar membro" },
     { status: 500 },
   );
 }
@@ -64,7 +64,7 @@ export async function PATCH(
 
     if (!isAccountRole(role)) {
       return NextResponse.json(
-        { error: "'role' must be one of owner, admin, agent, viewer" },
+        { error: "'role' deve ser um de: owner, admin, agent, viewer" },
         { status: 400 },
       );
     }
@@ -75,7 +75,7 @@ export async function PATCH(
       return NextResponse.json(
         {
           error:
-            "Use POST /api/account/transfer-ownership to promote a member to owner",
+            "Use POST /api/account/transfer-ownership para promover um membro a owner",
         },
         { status: 400 },
       );

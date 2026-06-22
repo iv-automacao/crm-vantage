@@ -40,7 +40,7 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
         if (fetchError) throw fetchError;
         setTemplates(data ?? []);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load templates');
+        setError(err instanceof Error ? err.message : 'Falha ao carregar modelos');
       } finally {
         setLoading(false);
       }
@@ -68,17 +68,17 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-foreground">Choose a Template</h2>
+        <h2 className="text-lg font-semibold text-foreground">Escolha um modelo</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Select an approved message template for your broadcast.
+          Selecione um modelo de mensagem aprovado para o seu disparo.
         </p>
       </div>
 
       {templates.length === 0 ? (
         <div className="flex h-48 flex-col items-center justify-center rounded-xl border border-border bg-card/50">
           <FileText className="mb-2 h-8 w-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">No templates available.</p>
-          <p className="mt-1 text-xs text-muted-foreground">Create a template in Settings first.</p>
+          <p className="text-sm text-muted-foreground">Nenhum modelo disponível.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Crie um modelo em Configurações primeiro.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -119,14 +119,14 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
 
       <div className="flex items-center justify-between border-t border-border pt-4">
         <Button variant="outline" onClick={onBack} className="border-border text-muted-foreground">
-          Back
+          Voltar
         </Button>
         <Button
           onClick={onNext}
           disabled={!selectedTemplate}
           className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
-          Next
+          Avançar
           <ArrowRight className="h-4 w-4" />
         </Button>
       </div>
