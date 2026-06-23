@@ -40,7 +40,8 @@ export function AdminAccountsTable({ initialRows }: { initialRows: Row[] }) {
   }
 
   async function reject(id: string) {
-    const reason = window.prompt("Motivo da reprovação (opcional):") ?? "";
+    const reason = window.prompt("Motivo da reprovação (opcional):");
+    if (reason === null) return; // cancelou — no-op
     setBusyId(id);
     setError(null);
     try {

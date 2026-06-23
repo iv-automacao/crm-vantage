@@ -22,7 +22,7 @@ export default async function AdminPage() {
 
   const { data: pending } = await supabaseAdmin()
     .from("accounts")
-    .select("id, name, status, account_type, created_at, owner_user_id")
+    .select("id, name, created_at, owner_user_id")
     .eq("status", "pending")
     .order("created_at", { ascending: false })
     .limit(200);
