@@ -82,11 +82,15 @@ export async function POST(
     }
 
     // Busca e-mail/nome do owner para o aviso.
-    const { data: owner } = await db
+    const { data: owner, error: ownerError } = await db
       .from("profiles")
       .select("email, full_name")
       .eq("user_id", updated.owner_user_id)
       .maybeSingle();
+
+    if (ownerError) {
+      console.warn("[POST approve] falha ao buscar owner para aviso:", ownerError);
+    }
 
     // Dispara o aviso somente se o owner tem e-mail.
     if (owner?.email) {

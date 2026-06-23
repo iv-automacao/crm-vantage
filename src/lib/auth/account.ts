@@ -124,6 +124,13 @@ export interface AccountContext {
  *
  * Use `requireRole(min)` instead when the route also needs a
  * minimum-role check — it's a thin wrapper over this.
+ *
+ * ATENÇÃO: este loader NÃO verifica o status da conta — contas
+ * pendentes, suspensas ou reprovadas passam normalmente. Rotas que
+ * exigem uma conta aprovada e ativa devem usar `requireActiveAccount()`
+ * (ou `requireRole`), jamais `getCurrentAccount()` diretamente — a
+ * exceção é a própria página `/pending`, que precisa ler o status
+ * enquanto a conta ainda não está ativa.
  */
 export async function getCurrentAccount(): Promise<AccountContext> {
   const supabase = await createClient();
