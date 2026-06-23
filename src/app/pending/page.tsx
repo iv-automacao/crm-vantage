@@ -4,6 +4,7 @@
 import { redirect } from "next/navigation";
 
 import { getCurrentAccount, UnauthorizedError } from "@/lib/auth/account";
+import { SignOutButton } from "./sign-out-button";
 
 export const metadata = {
   robots: { index: false, follow: false },
@@ -35,12 +36,7 @@ export default async function PendingPage() {
             ? "O acesso a esta conta não foi liberado. Se acha que é um engano, fale com a equipe VANTAGE."
             : "Recebemos seu cadastro. A equipe VANTAGE precisa aprovar o acesso antes de você entrar no CRM — você será avisado por e-mail assim que for liberado."}
         </p>
-        <a
-          href="/login"
-          className="mt-6 inline-block text-sm text-primary hover:underline"
-        >
-          Voltar ao login
-        </a>
+        <SignOutButton />
       </div>
     </main>
   );
