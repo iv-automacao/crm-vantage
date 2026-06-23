@@ -45,3 +45,6 @@ next-env.d.ts
 
 # Configs locais do Claude Code
 .claude/
+
+# SDD orchestration scratch (briefs, reports, ledger, diffs)
+.superpowers/

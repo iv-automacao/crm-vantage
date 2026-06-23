@@ -105,6 +105,12 @@ interface AuthContextValue {
   canEditSettings: boolean;
   /** True if the caller can send messages and edit operational data (agent+). */
   canSendMessages: boolean;
+  /**
+   * True se o usuário logado é admin de plataforma VANTAGE (allowlist por env).
+   * Fornecido pelo servidor — apenas para UX (mostrar entrada Admin na sidebar).
+   * A guarda real fica nos server actions / route handlers do painel admin.
+   */
+  isPlatformAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -114,7 +120,13 @@ const AuthContext = createContext<AuthContextValue | null>(null);
  * Makes ONE getSession() call for the whole tree instead of one per
  * component, avoiding internal lock contention in the Supabase client.
  */
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({
+  children,
+  isPlatformAdmin = false,
+}: {
+  children: ReactNode;
+  isPlatformAdmin?: boolean;
+}) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [account, setAccount] = useState<AccountSummary | null>(null);
@@ -330,6 +342,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         refreshProfile,
         account,
         defaultCurrency: account?.default_currency ?? DEFAULT_CURRENCY,
+        // Prop estática vinda do servidor — não faz parte do `derived` memo
+        // pois não depende de nenhum estado client-side.
+        isPlatformAdmin,
         ...derived,
       }}
     >
@@ -369,6 +384,7 @@ export function useAuth(): AuthContextValue {
       canManageMembers: false,
       canEditSettings: false,
       canSendMessages: false,
+      isPlatformAdmin: false,
     };
   }
   return ctx;
