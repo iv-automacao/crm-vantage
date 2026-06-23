@@ -208,10 +208,38 @@ export function ClientsPanel() {
     }
   }
 
-  // Busca inicial e ao mudar o filtro
+  // Busca inicial e ao mudar o filtro — guarda `cancelled` para evitar race condition
   useEffect(() => {
-    void fetchAccounts(filter);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let cancelled = false;
+
+    async function fetchForFilter() {
+      setLoading(true);
+      setError(null);
+      setRowErrors({});
+      try {
+        const res = await fetch(`/api/admin/accounts?status=${filter}`, {
+          cache: 'no-store',
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(
+            (body as { error?: string }).error ?? 'Falha ao carregar contas',
+          );
+        }
+        const data = await res.json();
+        if (!cancelled) setAccounts(data.accounts ?? []);
+      } catch (err) {
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : 'Erro desconhecido');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void fetchForFilter();
+    return () => {
+      cancelled = true;
+    };
   }, [filter]);
 
   async function suspend(id: string) {
