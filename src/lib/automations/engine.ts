@@ -26,6 +26,10 @@ export interface AutomationContext {
   message_text?: string
   /** Conversation the event belongs to, if any. */
   conversation_id?: string
+  /** Sender's phone (E.164), for webhook payloads / integrations. */
+  contact_phone?: string
+  /** Sender's display name, for webhook payloads / integrations. */
+  contact_name?: string
   /** Arbitrary variables accumulated during execution. */
   vars?: Record<string, unknown>
   /** The tag id that was added, for tag_added trigger. */
@@ -648,11 +652,22 @@ function waitMs(cfg: WaitStepConfig): number {
   return Math.max(1_000, cfg.amount * unitMs)
 }
 
+// Placeholders suportados no template do corpo da action "Enviar webhook"
+// (e em qualquer outro lugar que interpole). Mantém `{{message.text}}` e
+// `{{vars.X}}` e expõe identidade/roteamento pra integrações externas
+// (ex: o agente n8n precisa de `{{conversation.id}}` pra responder via
+// /api/external/whatsapp/send, e de `{{contact.phone}}` pra chavear a
+// memória da conversa). Placeholder desconhecido → string vazia.
 function interpolate(s: string, args: ExecuteArgs): string {
   return s.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key) => {
     const [ns, prop] = String(key).split('.')
     if (ns === 'message' && prop === 'text') return String(args.context.message_text ?? '')
     if (ns === 'vars' && prop) return String(args.context.vars?.[prop] ?? '')
+    if (ns === 'conversation' && prop === 'id') return String(args.context.conversation_id ?? '')
+    if (ns === 'contact' && prop === 'phone') return String(args.context.contact_phone ?? '')
+    if (ns === 'contact' && prop === 'name') return String(args.context.contact_name ?? '')
+    if (ns === 'contact' && prop === 'id') return String(args.contactId ?? '')
+    if (ns === 'account' && prop === 'id') return String(args.automation.account_id ?? '')
     return ''
   })
 }

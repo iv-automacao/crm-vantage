@@ -716,6 +716,11 @@ async function processMessage(
       context: {
         message_text: inboundText,
         conversation_id: conversation.id,
+        // Expostos pro template da action "Enviar webhook" ({{contact.phone}},
+        // {{contact.name}}) — o agente externo (n8n) precisa disso pra
+        // chavear memória e responder.
+        contact_phone: senderPhone,
+        contact_name: contactName,
       },
     }).catch((err) => console.error('[automations] dispatch failed:', err))
   }

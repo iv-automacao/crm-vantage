@@ -1,6 +1,7 @@
 import {
   Coins,
   FileText,
+  KeyRound,
   LayoutGrid,
   Palette,
   PlugZap,
@@ -29,6 +30,7 @@ export const SETTINGS_SECTIONS = [
   'fields',
   'deals',
   'members',
+  'api',
 ] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
@@ -53,6 +55,7 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   fields: { id: 'fields', label: 'Campos e etiquetas', icon: Tags, group: 'workspace' },
   deals: { id: 'deals', label: 'Negócios e moeda', icon: Coins, group: 'workspace' },
   members: { id: 'members', label: 'Membros da equipe', icon: UsersRound, group: 'workspace' },
+  api: { id: 'api', label: 'API / Integrações', icon: KeyRound, group: 'workspace' },
 };
 
 export const RAIL_GROUPS: { label: string | null; group: SectionMeta['group'] }[] = [

@@ -141,6 +141,12 @@ export const RATE_LIMITS = {
    *  while still bounding accidental abuse from a script run in a
    *  loop or a compromised admin session spamming role flips. */
   adminAction: { limit: 30, windowMs: 60_000 },
+  /** External API-key send (n8n agent replying). Bucketed per ACCOUNT,
+   *  not per user — the key authenticates an account, and an agent can
+   *  legitimately fan out several replies. 120/min is generous for a
+   *  conversational bot while still bounding a runaway n8n loop or a
+   *  leaked key blasting the WhatsApp number. */
+  apiSend: { limit: 120, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't
