@@ -24,17 +24,24 @@ export default async function PendingPage() {
   if (status === "active") redirect("/dashboard");
 
   const isRejected = status === "rejected";
+  const isSuspended = status === "suspended";
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-md rounded-2xl border border-border bg-card p-8 text-center">
         <h1 className="text-xl font-semibold text-foreground">
-          {isRejected ? "Conta não aprovada" : "Sua conta está em análise"}
+          {isRejected
+            ? "Conta não aprovada"
+            : isSuspended
+              ? "Conta suspensa"
+              : "Sua conta está em análise"}
         </h1>
         <p className="mt-3 text-sm text-muted-foreground">
           {isRejected
             ? "O acesso a esta conta não foi liberado. Se acha que é um engano, fale com a equipe VANTAGE."
-            : "Recebemos seu cadastro. A equipe VANTAGE precisa aprovar o acesso antes de você entrar no CRM — você será avisado por e-mail assim que for liberado."}
+            : isSuspended
+              ? "O acesso a esta conta foi suspenso. Fale com a equipe VANTAGE para reativar."
+              : "Recebemos seu cadastro. A equipe VANTAGE precisa aprovar o acesso antes de você entrar no CRM — você será avisado por e-mail assim que for liberado."}
         </p>
         <SignOutButton />
       </div>

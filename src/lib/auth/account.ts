@@ -105,6 +105,8 @@ export interface AccountContext {
   supabase: SupabaseClient;
   /** `auth.uid()` for the caller. Always defined when this resolves. */
   userId: string;
+  /** E-mail autenticado do caller (auth.email). Null em sessões sem e-mail. */
+  email: string | null;
   /** Caller's account_id from their profile row. */
   accountId: string;
   /** Caller's role within their account. */
@@ -178,6 +180,7 @@ export async function getCurrentAccount(): Promise<AccountContext> {
   return {
     supabase,
     userId: user.id,
+    email: user.email ?? null,
     accountId: data.account_id,
     role: data.account_role,
     account: {
