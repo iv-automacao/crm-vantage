@@ -42,6 +42,10 @@ interface AccountSummary {
   /** Default deal currency (ISO-4217). NOT NULL DEFAULT 'USD' in the
    *  DB (migration 021); narrowed to DEFAULT_CURRENCY when absent. */
   default_currency: string;
+  /** Status de aprovação da conta. Null enquanto carrega. */
+  status: string | null;
+  /** Origem/tipo da conta ('ia_client' | 'self_serve' | 'internal'). */
+  account_type: string | null;
 }
 
 interface AuthContextValue {
@@ -136,7 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // missing account collapses to null rather than a half-
           // populated row (shouldn't happen post-017 NOT NULL, but
           // belt-and-braces against forks running older schemas).
-          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, account:accounts!inner(id, name, default_currency)",
+          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, account:accounts!inner(id, name, default_currency, status, account_type)",
         )
         .eq("user_id", userId)
         .maybeSingle();
@@ -162,6 +166,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               id: string;
               name: string;
               default_currency: string | null;
+              status: string | null;
+              account_type: string | null;
             } | null);
         // Narrow default_currency defensively: forks running pre-021
         // schemas won't have the column, so a missing/null value reads
@@ -171,6 +177,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               id: accountRaw.id,
               name: accountRaw.name,
               default_currency: accountRaw.default_currency ?? DEFAULT_CURRENCY,
+              status: accountRaw.status ?? null,
+              account_type: accountRaw.account_type ?? null,
             }
           : null;
 

@@ -54,6 +54,22 @@ export class ForbiddenError extends Error {
   }
 }
 
+export type AccountStatus = "pending" | "active" | "suspended" | "rejected";
+
+/**
+ * Conta autenticada mas ainda não aprovada (ou suspensa/reprovada).
+ * 403 com código estável pra o frontend detectar e redirecionar ao
+ * muro `/pending`.
+ */
+export class AccountPendingError extends Error {
+  readonly status = 403 as const;
+  readonly code = "account_pending" as const;
+  constructor(public readonly accountStatus: AccountStatus) {
+    super("Account is not active");
+    this.name = "AccountPendingError";
+  }
+}
+
 /**
  * Convert one of the typed errors above (or anything else) into a
  * `NextResponse`. Routes can do:
@@ -67,6 +83,12 @@ export class ForbiddenError extends Error {
  * server internals out of the wire.
  */
 export function toErrorResponse(err: unknown): NextResponse {
+  if (err instanceof AccountPendingError) {
+    return NextResponse.json(
+      { error: err.message, code: err.code, status: err.accountStatus },
+      { status: err.status },
+    );
+  }
   if (err instanceof UnauthorizedError || err instanceof ForbiddenError) {
     return NextResponse.json({ error: err.message }, { status: err.status });
   }
@@ -87,8 +109,8 @@ export interface AccountContext {
   accountId: string;
   /** Caller's role within their account. */
   role: AccountRole;
-  /** Lightweight account meta — id + name. */
-  account: { id: string; name: string };
+  /** Lightweight account meta — id + name + status + type. */
+  account: { id: string; name: string; status: AccountStatus; accountType: string | null };
 }
 
 /**
@@ -102,6 +124,13 @@ export interface AccountContext {
  *
  * Use `requireRole(min)` instead when the route also needs a
  * minimum-role check — it's a thin wrapper over this.
+ *
+ * ATENÇÃO: este loader NÃO verifica o status da conta — contas
+ * pendentes, suspensas ou reprovadas passam normalmente. Rotas que
+ * exigem uma conta aprovada e ativa devem usar `requireActiveAccount()`
+ * (ou `requireRole`), jamais `getCurrentAccount()` diretamente — a
+ * exceção é a própria página `/pending`, que precisa ler o status
+ * enquanto a conta ainda não está ativa.
  */
 export async function getCurrentAccount(): Promise<AccountContext> {
   const supabase = await createClient();
@@ -121,7 +150,7 @@ export async function getCurrentAccount(): Promise<AccountContext> {
   // rather than silently returning a half-populated profile.
   const { data, error } = await supabase
     .from("profiles")
-    .select("account_id, account_role, account:accounts!inner(id, name)")
+    .select("account_id, account_role, account:accounts!inner(id, name, status, account_type)")
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -151,19 +180,30 @@ export async function getCurrentAccount(): Promise<AccountContext> {
     userId: user.id,
     accountId: data.account_id,
     role: data.account_role,
-    account: { id: accountRow.id, name: accountRow.name },
+    account: {
+      id: accountRow.id,
+      name: accountRow.name,
+      status: accountRow.status as AccountStatus,
+      accountType: accountRow.account_type ?? null,
+    },
   };
 }
 
 /**
- * Resolve the caller's account context and enforce a minimum role.
- *
- * Throws `UnauthorizedError` / `ForbiddenError` as documented on
- * `getCurrentAccount`, plus `ForbiddenError("Insufficient role")`
- * when the caller is below `min`.
+ * Resolve o contexto e exige que a conta esteja `active` (lança
+ * `AccountPendingError` caso contrário). Use em rotas que não precisam
+ * de papel mínimo mas exigem conta aprovada.
  */
-export async function requireRole(min: AccountRole): Promise<AccountContext> {
+export async function requireActiveAccount(): Promise<AccountContext> {
   const ctx = await getCurrentAccount();
+  if (ctx.account.status !== "active") {
+    throw new AccountPendingError(ctx.account.status);
+  }
+  return ctx;
+}
+
+export async function requireRole(min: AccountRole): Promise<AccountContext> {
+  const ctx = await requireActiveAccount();
   if (!hasMinRole(ctx.role, min)) {
     throw new ForbiddenError(
       `This action requires the '${min}' role or higher`,
