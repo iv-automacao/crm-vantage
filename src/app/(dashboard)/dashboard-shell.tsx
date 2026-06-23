@@ -50,9 +50,15 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function DashboardShell({ children }: { children: React.ReactNode }) {
+export function DashboardShell({
+  children,
+  isPlatformAdmin = false,
+}: {
+  children: React.ReactNode;
+  isPlatformAdmin?: boolean;
+}) {
   return (
-    <AuthProvider>
+    <AuthProvider isPlatformAdmin={isPlatformAdmin}>
       <DashboardShellInner>{children}</DashboardShellInner>
     </AuthProvider>
   );
