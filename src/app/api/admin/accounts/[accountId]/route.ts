@@ -89,6 +89,9 @@ export async function DELETE(
       );
     }
 
+    // Fail-open intencional: se o owner não tiver linha em `profiles`, `ownerProfile`
+    // é null, `email` fica null, e `isPlatformAdmin(null)` retorna false — o delete
+    // prossegue. Conta órfã/corrompida sem profile deve poder ser removida pelo admin.
     if (isPlatformAdmin(ownerProfile?.email ?? null)) {
       return NextResponse.json(
         { error: "Não é possível deletar a conta de um admin de plataforma" },

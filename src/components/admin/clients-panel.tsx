@@ -183,32 +183,12 @@ export function ClientsPanel() {
   const [busyId, setBusyId] = useState<string | null>(null);
   // Erros por linha (chave = id da conta)
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  // Incrementar força re-fetch via o mesmo effect guarded — evita race condition
+  const [refetchKey, setRefetchKey] = useState(0);
 
-  /** Busca contas pelo filtro de status atual */
-  async function fetchAccounts(status: AccountStatus) {
-    setLoading(true);
-    setError(null);
-    setRowErrors({});
-    try {
-      const res = await fetch(`/api/admin/accounts?status=${status}`, {
-        cache: 'no-store',
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(
-          (body as { error?: string }).error ?? 'Falha ao carregar contas',
-        );
-      }
-      const data = await res.json();
-      setAccounts(data.accounts ?? []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // Busca inicial e ao mudar o filtro — guarda `cancelled` para evitar race condition
+  // Único caminho de fetch — guarda `cancelled` para evitar race condition ao
+  // trocar filtro rapidamente. Disparado tanto pela mudança de filtro quanto pelo
+  // refetchKey (usado após suspend/reactivate).
   useEffect(() => {
     let cancelled = false;
 
@@ -240,8 +220,13 @@ export function ClientsPanel() {
     return () => {
       cancelled = true;
     };
-  }, [filter]);
+  }, [filter, refetchKey]);
 
+  // Assimetria intencional entre as ações:
+  // • suspend/reactivate disparam re-fetch via refetchKey — a conta muda de status
+  //   e pode sair do filtro atual, então a lista precisa ser rebuscada do servidor.
+  // • delete remove de forma otimista (filter local) — a linha foi apagada do banco
+  //   e nunca mais aparecerá; rebuscar seria redundante e causaria flash desnecessário.
   async function suspend(id: string) {
     if (
       !window.confirm('Suspender esta conta? O acesso será bloqueado.')
@@ -258,8 +243,8 @@ export function ClientsPanel() {
         const body = await res.json().catch(() => ({}));
         throw new Error((body as { error?: string }).error ?? 'Falha ao suspender');
       }
-      // Rebusca a lista para garantir consistência após suspensão
-      await fetchAccounts(filter);
+      // Re-fetch via effect guarded para garantir consistência após suspensão
+      setRefetchKey((k) => k + 1);
     } catch (err) {
       setRowErrors((prev) => ({
         ...prev,
@@ -281,8 +266,8 @@ export function ClientsPanel() {
         const body = await res.json().catch(() => ({}));
         throw new Error((body as { error?: string }).error ?? 'Falha ao reativar');
       }
-      // Rebusca a lista para garantir consistência após reativação
-      await fetchAccounts(filter);
+      // Re-fetch via effect guarded para garantir consistência após reativação
+      setRefetchKey((k) => k + 1);
     } catch (err) {
       setRowErrors((prev) => ({
         ...prev,
