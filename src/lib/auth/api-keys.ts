@@ -32,6 +32,9 @@ export const SCOPE_DEALS_READ = "deals:read";
 /** Escopo de escrita/gerenciamento de negócios (deals/funil). */
 export const SCOPE_DEALS_WRITE = "deals:write";
 
+/** Escopo de leitura de conversas e histórico de mensagens. */
+export const SCOPE_CONVERSATIONS_READ = "conversations:read";
+
 /** Todos os scopes que uma chave pode ter. Fonte da verdade. */
 export const ALL_SCOPES = [
   SCOPE_MESSAGES_SEND,
@@ -39,6 +42,7 @@ export const ALL_SCOPES = [
   SCOPE_CONTACTS_WRITE,
   SCOPE_DEALS_READ,
   SCOPE_DEALS_WRITE,
+  SCOPE_CONVERSATIONS_READ,
 ] as const;
 
 /** Metadados pra UI (checkboxes) — label/descrição em português. */
@@ -48,6 +52,7 @@ export const API_KEY_SCOPE_META: Record<string, { label: string; description: st
   [SCOPE_CONTACTS_WRITE]: { label: "Gerenciar contatos", description: "Criar/atualizar contatos e aplicar tags/campos." },
   [SCOPE_DEALS_READ]: { label: "Ler negócios", description: "Ler negócios e listar pipelines." },
   [SCOPE_DEALS_WRITE]: { label: "Gerenciar negócios", description: "Criar e atualizar negócios no funil." },
+  [SCOPE_CONVERSATIONS_READ]: { label: "Ler conversas", description: "Ler conversas e histórico de mensagens." },
 };
 
 /**
