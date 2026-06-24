@@ -151,6 +151,10 @@ export const RATE_LIMITS = {
   contactsWrite: { limit: 120, windowMs: 60_000 },
   /** Leitura de contatos/tags/campos via API. Mais folgado. */
   contactsRead: { limit: 240, windowMs: 60_000 },
+  /** Escrita de negócios via API. Por conta. */
+  dealsWrite: { limit: 120, windowMs: 60_000 },
+  /** Leitura de negócios/pipelines via API. Mais folgado. */
+  dealsRead: { limit: 240, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't
