@@ -17,7 +17,9 @@ const HTML = `<!doctype html>
   </head>
   <body>
     <script id="api-reference" data-url="/api/openapi.json"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+    <!-- Versão pinada (minor travado, recebe patches) — evita um major novo
+         do Scalar quebrar a página sem aviso. -->
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.61"></script>
   </body>
 </html>`
 

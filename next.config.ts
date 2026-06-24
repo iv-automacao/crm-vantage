@@ -39,9 +39,11 @@ const SECURITY_HEADERS = [
       // Next.js needs 'unsafe-inline' for its inline hydration script
       // and 'unsafe-eval' in dev + some production optimisations.
       // Nonce-based CSP is a later project.
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      // jsdelivr serve o Scalar (UI da página pública /docs de API).
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net",
       // Tailwind + inline style attributes on lots of components.
-      "style-src 'self' 'unsafe-inline'",
+      // jsdelivr: estilos do Scalar em /docs.
+      "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
       // Supabase public-bucket avatars, contact avatars (arbitrary
       // https URLs paste-able from the UI), OG images, data URLs for
       // tiny inline assets.
@@ -49,7 +51,8 @@ const SECURITY_HEADERS = [
       // Outbound media previews (blob: from MediaRecorder + file picker)
       // and Supabase public-bucket audio/video the inbox renders.
       "media-src 'self' blob: https://*.supabase.co",
-      "font-src 'self' data:",
+      // jsdelivr: fontes web que o Scalar carrega em /docs.
+      "font-src 'self' data: https://cdn.jsdelivr.net",
       // Supabase REST + realtime (WSS). All Meta API calls happen
       // server-side, so graph.facebook.com does not belong here.
       "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
