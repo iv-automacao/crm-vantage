@@ -29,9 +29,11 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 /**
  * Cria fake do Supabase admin com respostas configuráveis por tabela.
  * Suporta chamadas encadeadas de select/eq/order/maybeSingle.
+ * eqCalls registra todos os pares (column, value) passados a .eq() por tabela.
  */
 function makeFakeAdmin(
   tableResponses: Record<string, { data: unknown; error: unknown }>,
+  eqCalls?: Record<string, Array<[string, unknown]>>,
 ): SupabaseClient {
   function makeBuilder(table: string) {
     const resp = tableResponses[table] ?? { data: null, error: null }
@@ -40,7 +42,14 @@ function makeFakeAdmin(
     const terminal = () => Promise.resolve(resp)
     const chain = () => builder
     builder.select = chain
-    builder.eq = chain
+    // Registra chamadas a .eq() para validação de scoping por tenant
+    builder.eq = (column: string, value: unknown) => {
+      if (eqCalls) {
+        if (!eqCalls[table]) eqCalls[table] = []
+        eqCalls[table].push([column, value])
+      }
+      return builder
+    }
     // order() pode ser usado como terminal (list queries) ou encadeado
     builder.order = () => {
       // Retorna thenable — funciona como terminal E como encadeável
@@ -59,9 +68,12 @@ function makeFakeAdmin(
   return { from: (table: string) => makeBuilder(table) } as unknown as SupabaseClient
 }
 
-function makeCtx(tableResponses: Record<string, { data: unknown; error: unknown }>): ApiServiceCtx {
+function makeCtx(
+  tableResponses: Record<string, { data: unknown; error: unknown }>,
+  eqCalls?: Record<string, Array<[string, unknown]>>,
+): ApiServiceCtx {
   return {
-    admin: makeFakeAdmin(tableResponses),
+    admin: makeFakeAdmin(tableResponses, eqCalls),
     accountId: 'acct-test',
     auditUserId: 'user-audit',
   }
@@ -221,6 +233,42 @@ describe('sendBroadcast — template inválido', () => {
   })
 })
 
+// ─── sendBroadcast — propagação de erros do banco ────────────────────────────
+
+describe('sendBroadcast — erros de banco de dados', () => {
+  it('propaga erro do Supabase em whatsapp_config sem lançar WhatsappNotConfiguredError', async () => {
+    const dbError = { message: 'DB down', code: '08006' }
+    const ctx = makeCtx({
+      whatsapp_config: { data: null, error: dbError },
+      message_templates: { data: FAKE_TEMPLATE, error: null },
+    })
+    // Deve rejeitar com o erro do banco, não com WhatsappNotConfiguredError
+    await expect(
+      sendBroadcast(ctx, { template_name: 'promo', template_language: 'pt_BR', recipients: [{ phone: '5592999999999' }] })
+    ).rejects.toMatchObject({ message: 'DB down' })
+    // Garante que não foi mascarado como erro de negócio (409)
+    await expect(
+      sendBroadcast(ctx, { template_name: 'promo', template_language: 'pt_BR', recipients: [{ phone: '5592999999999' }] })
+    ).rejects.not.toBeInstanceOf(WhatsappNotConfiguredError)
+  })
+
+  it('propaga erro do Supabase em message_templates sem lançar TemplateNotApprovedError', async () => {
+    const dbError = { message: 'connection timeout', code: '08001' }
+    const ctx = makeCtx({
+      whatsapp_config: { data: FAKE_CONFIG, error: null },
+      message_templates: { data: null, error: dbError },
+    })
+    // Deve rejeitar com o erro do banco, não com TemplateNotApprovedError
+    await expect(
+      sendBroadcast(ctx, { template_name: 'promo', template_language: 'pt_BR', recipients: [{ phone: '5592999999999' }] })
+    ).rejects.toMatchObject({ message: 'connection timeout' })
+    // Garante que não foi mascarado como erro de negócio (422)
+    await expect(
+      sendBroadcast(ctx, { template_name: 'promo', template_language: 'pt_BR', recipients: [{ phone: '5592999999999' }] })
+    ).rejects.not.toBeInstanceOf(TemplateNotApprovedError)
+  })
+})
+
 // ─── sendBroadcast — happy path ───────────────────────────────────────────────
 
 describe('sendBroadcast — happy path', () => {
@@ -249,6 +297,31 @@ describe('sendBroadcast — happy path', () => {
     expect(mockSend).toHaveBeenCalledTimes(2)
     expect(result.results[0]).toMatchObject({ phone: '5592999999991', status: 'sent', whatsapp_message_id: 'msg-1' })
     expect(result.results[1]).toMatchObject({ phone: '5592999999992', status: 'sent', whatsapp_message_id: 'msg-2' })
+  })
+
+  it('filtra whatsapp_config e message_templates pelo account_id da conta (scoping por tenant)', async () => {
+    const mockSend = vi.mocked(sendTemplateMessage)
+    mockSend.mockResolvedValueOnce({ messageId: 'msg-scope' })
+
+    // eqCalls registra todos os pares (column, value) passados a .eq() por tabela
+    const eqCalls: Record<string, Array<[string, unknown]>> = {}
+    const ctx = makeCtx(
+      {
+        whatsapp_config: { data: FAKE_CONFIG, error: null },
+        message_templates: { data: FAKE_TEMPLATE, error: null },
+      },
+      eqCalls,
+    )
+
+    await sendBroadcast(ctx, {
+      template_name: 'promo',
+      template_language: 'pt_BR',
+      recipients: [{ phone: '5592999999998' }],
+    })
+
+    // Ambas as queries devem filtrar pelo account_id do contexto
+    expect(eqCalls['whatsapp_config']).toContainEqual(['account_id', 'acct-test'])
+    expect(eqCalls['message_templates']).toContainEqual(['account_id', 'acct-test'])
   })
 
   it('chama decrypt no access_token da config', async () => {

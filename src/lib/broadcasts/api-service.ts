@@ -83,20 +83,22 @@ export async function listApprovedTemplates(ctx: ApiServiceCtx): Promise<Templat
  * Nunca expõe o access token em logs ou mensagens de erro.
  */
 export async function sendBroadcast(ctx: ApiServiceCtx, body: BroadcastSendBody): Promise<BroadcastSendResult> {
-  // 1) Busca config da conta (token criptografado)
-  const { data: config } = await ctx.admin
+  // 1) Busca config da conta (apenas os campos necessários — evita trazer credenciais desnecessárias)
+  const { data: config, error: configError } = await ctx.admin
     .from('whatsapp_config')
-    .select('*')
+    .select('phone_number_id,access_token')
     .eq('account_id', ctx.accountId)
     .maybeSingle()
 
+  // Propaga erro real do banco antes de verificar ausência de dados
+  if (configError) throw configError
   if (!config) throw new WhatsappNotConfiguredError()
 
   // Descriptografa o token — nunca logar este valor
   const accessToken = decrypt(config.access_token as string)
 
   // 2) Valida que o template existe e está APPROVED
-  const { data: rawTemplate } = await ctx.admin
+  const { data: rawTemplate, error: templateError } = await ctx.admin
     .from('message_templates')
     .select('*')
     .eq('account_id', ctx.accountId)
@@ -104,6 +106,8 @@ export async function sendBroadcast(ctx: ApiServiceCtx, body: BroadcastSendBody)
     .eq('language', body.template_language)
     .maybeSingle()
 
+  // Propaga erro real do banco antes de verificar ausência ou status inválido
+  if (templateError) throw templateError
   if (!rawTemplate || rawTemplate.status !== 'APPROVED') {
     throw new TemplateNotApprovedError(body.template_name)
   }
