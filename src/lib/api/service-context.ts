@@ -1,6 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ResolvedCtx } from '@/lib/api/handler'
-import type { ApiKeyContext } from '@/lib/auth/api-key-context'
 
 /** Contexto que as camadas de serviço account-scoped recebem. */
 export interface ApiServiceCtx {
