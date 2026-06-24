@@ -40,6 +40,8 @@ import { hasMinRole, isAccountRole, type AccountRole } from "./roles";
 
 export class UnauthorizedError extends Error {
   readonly status = 401 as const;
+  /** Código estável para clientes API discriminarem o tipo de erro. */
+  readonly code = "unauthorized" as const;
   constructor(message = "Unauthorized") {
     super(message);
     this.name = "UnauthorizedError";
@@ -48,6 +50,8 @@ export class UnauthorizedError extends Error {
 
 export class ForbiddenError extends Error {
   readonly status = 403 as const;
+  /** Código estável para clientes API discriminarem o tipo de erro. */
+  readonly code = "forbidden" as const;
   constructor(message = "Forbidden") {
     super(message);
     this.name = "ForbiddenError";
@@ -90,7 +94,9 @@ export function toErrorResponse(err: unknown): NextResponse {
     );
   }
   if (err instanceof UnauthorizedError || err instanceof ForbiddenError) {
-    return NextResponse.json({ error: err.message }, { status: err.status });
+    // Adição aditiva: emite `code` estável junto do `error`.
+    // Frontend existente lê apenas `error` — `code` é nova chave, não quebra.
+    return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
   }
   console.error("[toErrorResponse] uncategorized error:", err);
   return NextResponse.json({ error: "Internal server error" }, { status: 500 });
