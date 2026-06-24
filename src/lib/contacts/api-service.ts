@@ -137,42 +137,6 @@ export async function listCustomFields(
 
 // ─── Escritas ─────────────────────────────────────────────────────────────────
 
-/**
- * Aplica uma tag a um contato via upsert idempotente.
- * Resolve o nome da tag antes de escrever.
- * Não exportado: contactId já foi validado como pertencente à conta pelo chamador.
- */
-async function applyTag(ctx: ApiServiceCtx, contactId: string, tagName: string): Promise<void> {
-  const tagId = await resolveTagIdByName(ctx, tagName)
-  const { error } = await ctx.admin
-    .from('contact_tags')
-    .upsert({ contact_id: contactId, tag_id: tagId }, { onConflict: 'contact_id,tag_id', ignoreDuplicates: true })
-
-  if (error) throw error
-}
-
-/**
- * Seta (ou atualiza) um campo customizado para um contato.
- * Resolve o nome do campo antes de escrever.
- * Não exportado: contactId já foi validado como pertencente à conta pelo chamador.
- */
-async function setCustomField(
-  ctx: ApiServiceCtx,
-  contactId: string,
-  fieldName: string,
-  value: string,
-): Promise<void> {
-  const fieldId = await resolveFieldIdByName(ctx, fieldName)
-  const { error } = await ctx.admin
-    .from('contact_custom_values')
-    .upsert(
-      { contact_id: contactId, custom_field_id: fieldId, value },
-      { onConflict: 'contact_id,custom_field_id' },
-    )
-
-  if (error) throw error
-}
-
 // ─── Upsert principal ─────────────────────────────────────────────────────────
 
 /**
