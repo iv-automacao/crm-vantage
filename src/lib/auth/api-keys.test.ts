@@ -8,6 +8,7 @@ import {
   hashApiKey,
   sanitizeScopes,
   SCOPE_CONTACTS_WRITE,
+  SCOPE_CONVERSATIONS_READ,
   SCOPE_DEALS_WRITE,
   SCOPE_MESSAGES_SEND,
 } from "./api-keys";
@@ -91,5 +92,8 @@ describe("sanitizeScopes", () => {
   });
   it("aceita scopes de deals válidos e descarta inválidos", () => {
     expect(sanitizeScopes(["deals:write", "x"])).toEqual([SCOPE_DEALS_WRITE]);
+  });
+  it("aceita conversations:read e descarta inválidos", () => {
+    expect(sanitizeScopes(["conversations:read", "x"])).toEqual([SCOPE_CONVERSATIONS_READ]);
   });
 });

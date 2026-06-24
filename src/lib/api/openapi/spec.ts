@@ -11,6 +11,7 @@
 import '@/lib/api/schemas/messages'        // efeito colateral: registra SendMessageBody no globalRegistry
 import '@/lib/api/schemas/contacts'        // efeito colateral: registra ContactUpsertBody e ContactPatchBody no globalRegistry
 import '@/lib/api/schemas/deals'           // efeito colateral: registra DealCreateBody e DealPatchBody no globalRegistry
+import '@/lib/api/schemas/conversations'   // efeito colateral: registra ConversationContactQuery e MessageListQuery no globalRegistry
 import { registerOperation } from './registry'
 
 registerOperation({
@@ -126,5 +127,32 @@ registerOperation({
   summary: 'Listar pipelines e etapas',
   tags: ['Deals'],
   operationId: 'listPipelines',
+  security: 'apiKey',
+})
+
+registerOperation({
+  method: 'get',
+  path: '/api/v1/conversations',
+  summary: 'Conversas de um contato',
+  tags: ['Conversations'],
+  operationId: 'findConversationsByContact',
+  security: 'apiKey',
+})
+
+registerOperation({
+  method: 'get',
+  path: '/api/v1/conversations/{id}',
+  summary: 'Obter conversa',
+  tags: ['Conversations'],
+  operationId: 'getConversation',
+  security: 'apiKey',
+})
+
+registerOperation({
+  method: 'get',
+  path: '/api/v1/conversations/{id}/messages',
+  summary: 'Histórico de mensagens (paginado)',
+  tags: ['Conversations'],
+  operationId: 'listMessages',
   security: 'apiKey',
 })

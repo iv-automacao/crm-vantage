@@ -155,6 +155,8 @@ export const RATE_LIMITS = {
   dealsWrite: { limit: 120, windowMs: 60_000 },
   /** Leitura de negócios/pipelines via API. Mais folgado. */
   dealsRead: { limit: 240, windowMs: 60_000 },
+  /** Leitura de conversas/mensagens via API. Por conta. */
+  conversationsRead: { limit: 240, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't
