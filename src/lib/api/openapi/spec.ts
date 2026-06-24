@@ -9,6 +9,7 @@
 // limpa o array antes de cada teste, mas o import deste módulo não é usado
 // diretamente (o teste importa registry e schemas separadamente).
 import '@/lib/api/schemas/messages'        // efeito colateral: registra SendMessageBody no globalRegistry
+import '@/lib/api/schemas/contacts'        // efeito colateral: registra ContactUpsertBody e ContactPatchBody no globalRegistry
 import { registerOperation } from './registry'
 
 registerOperation({
@@ -20,4 +21,61 @@ registerOperation({
   security: 'apiKey',
   requestBodySchemaId: 'SendMessageBody',
   successDescription: 'Mensagem enfileirada/enviada. Retorna message_id e whatsapp_message_id.',
+})
+
+registerOperation({
+  method: 'post',
+  path: '/api/v1/contacts',
+  summary: 'Criar/atualizar contato',
+  tags: ['Contacts'],
+  operationId: 'upsertContact',
+  security: 'apiKey',
+  requestBodySchemaId: 'ContactUpsertBody',
+  successDescription: 'Contato criado/atualizado.',
+})
+
+registerOperation({
+  method: 'get',
+  path: '/api/v1/contacts',
+  summary: 'Buscar contato por telefone',
+  tags: ['Contacts'],
+  operationId: 'findContactByPhone',
+  security: 'apiKey',
+})
+
+registerOperation({
+  method: 'get',
+  path: '/api/v1/contacts/{id}',
+  summary: 'Obter contato',
+  tags: ['Contacts'],
+  operationId: 'getContact',
+  security: 'apiKey',
+})
+
+registerOperation({
+  method: 'patch',
+  path: '/api/v1/contacts/{id}',
+  summary: 'Atualizar contato',
+  tags: ['Contacts'],
+  operationId: 'patchContact',
+  security: 'apiKey',
+  requestBodySchemaId: 'ContactPatchBody',
+})
+
+registerOperation({
+  method: 'get',
+  path: '/api/v1/tags',
+  summary: 'Listar tags',
+  tags: ['Contacts'],
+  operationId: 'listTags',
+  security: 'apiKey',
+})
+
+registerOperation({
+  method: 'get',
+  path: '/api/v1/custom-fields',
+  summary: 'Listar campos customizados',
+  tags: ['Contacts'],
+  operationId: 'listCustomFields',
+  security: 'apiKey',
 })

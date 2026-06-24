@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { validationError, errorEnvelope } from './errors'
+import { validationError, errorEnvelope, ApiError, UnknownTagError, UnknownFieldError, NotFoundError } from './errors'
+import { toErrorResponse } from '@/lib/auth/account'
 
 describe('errorEnvelope', () => {
   it('retorna NextResponse com status e corpo corretos', async () => {
@@ -68,5 +69,59 @@ describe('validationError', () => {
     const res = validationError((result as { success: false; error: z.ZodError }).error)
     const body = await res.json()
     expect(body.details[0].message).toBeTruthy()
+  })
+})
+
+describe('ApiError e subclasses', () => {
+  it('ApiError expõe status, code e message', () => {
+    const err = new ApiError(400, 'bad_request', 'Dados inválidos')
+    expect(err.status).toBe(400)
+    expect(err.code).toBe('bad_request')
+    expect(err.message).toBe('Dados inválidos')
+    expect(err.name).toBe('ApiError')
+  })
+
+  it('UnknownTagError tem status 422 e code unknown_tag', () => {
+    const err = new UnknownTagError('quente')
+    expect(err.status).toBe(422)
+    expect(err.code).toBe('unknown_tag')
+    expect(err.details?.[0].field).toBe('tags')
+  })
+
+  it('UnknownFieldError tem status 422 e code unknown_field', () => {
+    const err = new UnknownFieldError('modelo')
+    expect(err.status).toBe(422)
+    expect(err.code).toBe('unknown_field')
+    expect(err.details?.[0].field).toBe('custom_fields')
+  })
+
+  it('NotFoundError tem status 404 e code not_found', () => {
+    const err = new NotFoundError()
+    expect(err.status).toBe(404)
+    expect(err.code).toBe('not_found')
+  })
+})
+
+describe('toErrorResponse com ApiError', () => {
+  it('toErrorResponse mapeia ApiError (422 unknown_tag)', async () => {
+    const res = toErrorResponse(new UnknownTagError('quente'))
+    expect(res.status).toBe(422)
+    const body = await res.json()
+    expect(body.code).toBe('unknown_tag')
+    expect(body.details[0].field).toBe('tags')
+  })
+
+  it('toErrorResponse mapeia NotFoundError (404)', async () => {
+    const res = toErrorResponse(new NotFoundError('Contato não encontrado'))
+    expect(res.status).toBe(404)
+    const body = await res.json()
+    expect(body.code).toBe('not_found')
+    expect(body.error).toBe('Contato não encontrado')
+  })
+
+  it('toErrorResponse omite details quando ApiError não tem details', async () => {
+    const res = toErrorResponse(new NotFoundError())
+    const body = await res.json()
+    expect(body.details).toBeUndefined()
   })
 })

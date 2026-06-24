@@ -9,6 +9,10 @@ export interface ApiKeyContext {
   apiKeyId: string
   accountId: string
   scopes: string[]
+  /** user_id de quem criou a chave, ou null se não registrado. */
+  createdByUserId: string | null
+  /** owner_user_id da conta — fallback de auditoria. */
+  ownerUserId: string
 }
 
 // ------------------------------------------------------------
@@ -50,7 +54,7 @@ export async function resolveApiKey(
   const admin = supabaseAdmin()
   const { data: key, error } = await admin
     .from('api_keys')
-    .select('id, account_id, scopes, revoked_at, account:accounts!inner(id, status)')
+    .select('id, account_id, scopes, revoked_at, created_by_user_id, account:accounts!inner(id, status, owner_user_id)')
     .eq('token_hash', hashApiKey(token))
     .is('revoked_at', null)
     .maybeSingle()
@@ -67,5 +71,12 @@ export async function resolveApiKey(
     requiredScopes,
   })
 
-  return { supabase: admin, apiKeyId: key.id, accountId: key.account_id, scopes }
+  return {
+    supabase: admin,
+    apiKeyId: key.id,
+    accountId: key.account_id,
+    scopes,
+    createdByUserId: (key.created_by_user_id as string | null) ?? null,
+    ownerUserId: acct.owner_user_id as string,
+  }
 }

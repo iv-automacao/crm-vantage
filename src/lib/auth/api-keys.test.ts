@@ -6,6 +6,9 @@ import {
   extractBearerToken,
   generateApiKey,
   hashApiKey,
+  sanitizeScopes,
+  SCOPE_CONTACTS_WRITE,
+  SCOPE_MESSAGES_SEND,
 } from "./api-keys";
 
 describe("generateApiKey", () => {
@@ -70,5 +73,19 @@ describe("extractBearerToken", () => {
     expect(extractBearerToken("")).toBeNull();
     expect(extractBearerToken("Basic abc")).toBeNull();
     expect(extractBearerToken("vtg_sk_no_scheme")).toBeNull();
+  });
+});
+
+describe("sanitizeScopes", () => {
+  it("mantém só scopes válidos", () => {
+    expect(sanitizeScopes(["contacts:write", "inventado:x"])).toEqual([SCOPE_CONTACTS_WRITE]);
+  });
+  it("default messages:send quando vazio/ inválido", () => {
+    expect(sanitizeScopes([])).toEqual([SCOPE_MESSAGES_SEND]);
+    expect(sanitizeScopes(undefined)).toEqual([SCOPE_MESSAGES_SEND]);
+    expect(sanitizeScopes("x")).toEqual([SCOPE_MESSAGES_SEND]);
+  });
+  it("dedup", () => {
+    expect(sanitizeScopes(["contacts:read", "contacts:read"])).toEqual(["contacts:read"]);
   });
 });

@@ -12,7 +12,7 @@ import { NextResponse } from "next/server";
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import {
   generateApiKey,
-  SCOPE_MESSAGES_SEND,
+  sanitizeScopes,
 } from "@/lib/auth/api-keys";
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit";
 
@@ -94,6 +94,7 @@ export async function POST(request: Request) {
       );
     }
 
+    const scopes = sanitizeScopes(body?.scopes);
     const { key, tokenHash, prefix } = generateApiKey();
 
     const { data, error } = await ctx.supabase
@@ -103,7 +104,7 @@ export async function POST(request: Request) {
         name,
         token_hash: tokenHash,
         prefix,
-        scopes: [SCOPE_MESSAGES_SEND],
+        scopes,
         created_by_user_id: ctx.userId,
       })
       .select("id, name, prefix, scopes, created_at")
