@@ -7,6 +7,7 @@ import {
   generateApiKey,
   hashApiKey,
   sanitizeScopes,
+  SCOPE_BROADCASTS_SEND,
   SCOPE_CONTACTS_WRITE,
   SCOPE_CONVERSATIONS_READ,
   SCOPE_DEALS_WRITE,
@@ -95,5 +96,8 @@ describe("sanitizeScopes", () => {
   });
   it("aceita conversations:read e descarta inválidos", () => {
     expect(sanitizeScopes(["conversations:read", "x"])).toEqual([SCOPE_CONVERSATIONS_READ]);
+  });
+  it("aceita broadcasts:send e descarta inválidos", () => {
+    expect(sanitizeScopes(["broadcasts:send", "x"])).toEqual([SCOPE_BROADCASTS_SEND]);
   });
 });
