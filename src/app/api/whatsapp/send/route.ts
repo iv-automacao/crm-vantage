@@ -39,7 +39,11 @@ export async function POST(request: Request) {
       )
     }
 
-    const body = await request.json()
+    // Parse defensivo: JSON malformado vira 400, não 500.
+    const body = await request.json().catch(() => null)
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
 
     // Núcleo compartilhado com a rota externa (n8n). Aqui passamos o
     // client RLS-scoped da sessão; o gating por account_id no helper
