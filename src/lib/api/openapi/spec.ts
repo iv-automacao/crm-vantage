@@ -12,6 +12,7 @@ import '@/lib/api/schemas/messages'        // efeito colateral: registra SendMes
 import '@/lib/api/schemas/contacts'        // efeito colateral: registra ContactUpsertBody e ContactPatchBody no globalRegistry
 import '@/lib/api/schemas/deals'           // efeito colateral: registra DealCreateBody e DealPatchBody no globalRegistry
 import '@/lib/api/schemas/conversations'   // efeito colateral: registra ConversationContactQuery e MessageListQuery no globalRegistry
+import '@/lib/api/schemas/broadcasts'      // efeito colateral: registra BroadcastSendBody no globalRegistry
 import { registerOperation } from './registry'
 
 registerOperation({
@@ -155,4 +156,24 @@ registerOperation({
   tags: ['Conversations'],
   operationId: 'listMessages',
   security: 'apiKey',
+})
+
+registerOperation({
+  method: 'get',
+  path: '/api/v1/templates',
+  summary: 'Listar templates aprovados',
+  tags: ['Broadcasts'],
+  operationId: 'listTemplates',
+  security: 'apiKey',
+})
+
+registerOperation({
+  method: 'post',
+  path: '/api/v1/broadcasts',
+  summary: 'Disparar broadcast por template (até 200 destinatários)',
+  tags: ['Broadcasts'],
+  operationId: 'sendBroadcast',
+  security: 'apiKey',
+  requestBodySchemaId: 'BroadcastSendBody',
+  successDescription: 'Resultado por destinatário (sent/failed).',
 })

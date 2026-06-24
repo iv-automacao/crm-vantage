@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { validationError, errorEnvelope, ApiError, UnknownTagError, UnknownFieldError, NotFoundError, UnknownPipelineError, UnknownStageError } from './errors'
+import { validationError, errorEnvelope, ApiError, UnknownTagError, UnknownFieldError, NotFoundError, UnknownPipelineError, UnknownStageError, TemplateNotApprovedError, WhatsappNotConfiguredError } from './errors'
 import { toErrorResponse } from '@/lib/auth/account'
 
 describe('errorEnvelope', () => {
@@ -113,6 +113,20 @@ describe('ApiError e subclasses', () => {
     expect(err.status).toBe(422)
     expect(err.code).toBe('unknown_stage')
     expect(err.details?.[0].field).toBe('stage')
+  })
+
+  it('TemplateNotApprovedError tem status 422, code template_not_approved e details.field template_name', () => {
+    const err = new TemplateNotApprovedError('promo')
+    expect(err.status).toBe(422)
+    expect(err.code).toBe('template_not_approved')
+    expect(err.details?.[0].field).toBe('template_name')
+    expect(err.message).toContain('promo')
+  })
+
+  it('WhatsappNotConfiguredError tem status 409 e code whatsapp_not_configured', () => {
+    const err = new WhatsappNotConfiguredError()
+    expect(err.status).toBe(409)
+    expect(err.code).toBe('whatsapp_not_configured')
   })
 })
 

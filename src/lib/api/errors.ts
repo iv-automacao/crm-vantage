@@ -58,6 +58,20 @@ export class UnknownStageError extends ApiError {
   }
 }
 
+export class TemplateNotApprovedError extends ApiError {
+  constructor(name: string) {
+    super(422, 'template_not_approved', `O template '${name}' não existe ou não está aprovado nesta conta.`, [
+      { field: 'template_name', message: `template '${name}' não aprovado` },
+    ])
+  }
+}
+
+export class WhatsappNotConfiguredError extends ApiError {
+  constructor() {
+    super(409, 'whatsapp_not_configured', 'WhatsApp não está configurado nesta conta. Configure a integração antes de disparar.')
+  }
+}
+
 // Envelope padrão de erro da API — usado por todos os handlers.
 export function errorEnvelope(
   code: string,
