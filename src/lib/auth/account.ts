@@ -30,6 +30,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createClient } from "@/lib/supabase/server";
 import { hasMinRole, isAccountRole, type AccountRole } from "./roles";
+import { ApiError } from "@/lib/api/errors";
 
 // ------------------------------------------------------------
 // Errors
@@ -97,6 +98,13 @@ export function toErrorResponse(err: unknown): NextResponse {
     // Adição aditiva: emite `code` estável junto do `error`.
     // Frontend existente lê apenas `error` — `code` é nova chave, não quebra.
     return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
+  }
+  // Erros de API tipados (status/code/details) — ex.: validação de tag/campo, 404.
+  if (err instanceof ApiError) {
+    return NextResponse.json(
+      { error: err.message, code: err.code, ...(err.details && { details: err.details }) },
+      { status: err.status },
+    );
   }
   console.error("[toErrorResponse] uncategorized error:", err);
   return NextResponse.json({ error: "Internal server error" }, { status: 500 });
