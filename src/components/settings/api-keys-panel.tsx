@@ -19,6 +19,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
   AlertTriangle,
+  BookOpen,
   Copy,
   KeyRound,
   Loader2,
@@ -80,10 +81,12 @@ export function ApiKeysPanel() {
   const [revoking, setRevoking] = useState<ApiKey | null>(null);
   const [revokeBusy, setRevokeBusy] = useState(false);
 
+  // Endpoint canônico (v1). A rota antiga /api/external/whatsapp/send
+  // continua valendo como alias, mas a documentação aponta pra esta.
   const endpointUrl =
     typeof window !== 'undefined'
-      ? `${window.location.origin}/api/external/whatsapp/send`
-      : '/api/external/whatsapp/send';
+      ? `${window.location.origin}/api/v1/messages/send`
+      : '/api/v1/messages/send';
 
   const load = useCallback(async () => {
     try {
@@ -177,6 +180,15 @@ export function ApiKeysPanel() {
         <SettingsPanelHead
           title="API / Integrações"
           description="Chaves de API para integrações externas."
+          action={
+            <Button
+              variant="outline"
+              render={<a href="/docs" target="_blank" rel="noopener noreferrer" />}
+            >
+              <BookOpen className="size-4" />
+              Ver documentação
+            </Button>
+          }
         />
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-10 text-center">
@@ -204,10 +216,19 @@ export function ApiKeysPanel() {
         title="API / Integrações"
         description="Chaves bearer para integrações externas (ex.: agente de IA no n8n) enviarem respostas pelo seu WhatsApp."
         action={
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="size-4" />
-            Nova chave
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              render={<a href="/docs" target="_blank" rel="noopener noreferrer" />}
+            >
+              <BookOpen className="size-4" />
+              Ver documentação
+            </Button>
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="size-4" />
+              Nova chave
+            </Button>
+          </div>
         }
       />
 
