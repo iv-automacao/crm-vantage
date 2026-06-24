@@ -10,6 +10,7 @@
 // diretamente (o teste importa registry e schemas separadamente).
 import '@/lib/api/schemas/messages'        // efeito colateral: registra SendMessageBody no globalRegistry
 import '@/lib/api/schemas/contacts'        // efeito colateral: registra ContactUpsertBody e ContactPatchBody no globalRegistry
+import '@/lib/api/schemas/deals'           // efeito colateral: registra DealCreateBody e DealPatchBody no globalRegistry
 import { registerOperation } from './registry'
 
 registerOperation({
@@ -77,5 +78,53 @@ registerOperation({
   summary: 'Listar campos customizados',
   tags: ['Contacts'],
   operationId: 'listCustomFields',
+  security: 'apiKey',
+})
+
+registerOperation({
+  method: 'post',
+  path: '/api/v1/deals',
+  summary: 'Criar negócio',
+  tags: ['Deals'],
+  operationId: 'createDeal',
+  security: 'apiKey',
+  requestBodySchemaId: 'DealCreateBody',
+  successDescription: 'Negócio criado.',
+})
+
+registerOperation({
+  method: 'get',
+  path: '/api/v1/deals',
+  summary: 'Listar negócios de um contato',
+  tags: ['Deals'],
+  operationId: 'listDealsByContact',
+  security: 'apiKey',
+})
+
+registerOperation({
+  method: 'get',
+  path: '/api/v1/deals/{id}',
+  summary: 'Obter negócio',
+  tags: ['Deals'],
+  operationId: 'getDeal',
+  security: 'apiKey',
+})
+
+registerOperation({
+  method: 'patch',
+  path: '/api/v1/deals/{id}',
+  summary: 'Atualizar negócio (etapa/status/valor/título)',
+  tags: ['Deals'],
+  operationId: 'patchDeal',
+  security: 'apiKey',
+  requestBodySchemaId: 'DealPatchBody',
+})
+
+registerOperation({
+  method: 'get',
+  path: '/api/v1/pipelines',
+  summary: 'Listar pipelines e etapas',
+  tags: ['Deals'],
+  operationId: 'listPipelines',
   security: 'apiKey',
 })
