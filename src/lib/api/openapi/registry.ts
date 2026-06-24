@@ -32,6 +32,12 @@ export function __resetOperationsForTests() {
 export function buildOpenApiDocument() {
   // components.schemas vem de TODOS os schemas Zod com .meta({ id }) registrados
   // no globalRegistry do zod (efeito colateral dos imports em spec.ts).
+  //
+  // ATENÇÃO (testes): z.globalRegistry é GLOBAL de processo e NÃO é resetado por
+  // __resetOperationsForTests() (que só limpa `operations`). Hoje é inofensivo
+  // (só existe SendMessageBody). Se um futuro arquivo de teste registrar outros
+  // schemas no mesmo worker do vitest, eles também apareceriam aqui — isole com
+  // worker separado ou um helper de reset do registry se isso virar problema.
   const { schemas } = z.toJSONSchema(z.globalRegistry, { target: 'openapi-3.0' }) as {
     schemas: Record<string, unknown>
   }
