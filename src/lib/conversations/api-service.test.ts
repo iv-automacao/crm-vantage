@@ -50,7 +50,7 @@ function makeMessageRow(overrides: Partial<Record<string, unknown>> = {}) {
 
 /**
  * Cria ctx com admin fake cujo from('conversations') retorna a resposta configurada.
- * Para cenários que precisam de respostas por tabela, use makeCtxMultiTable.
+ * Usado para testes simples que só acessam conversations.
  */
 function makeCtxConversations(response: { data: unknown; error: unknown }): ApiServiceCtx {
   return {
@@ -69,36 +69,6 @@ function makeCtxConversations(response: { data: unknown; error: unknown }): ApiS
           return builder
         }
         return {}
-      },
-    } as unknown as SupabaseClient,
-    accountId: 'acct-123',
-    auditUserId: 'user-audit',
-  }
-}
-
-/**
- * Cria ctx com respostas configuráveis por tabela.
- * Suporta conversations com maybeSingle E array (para listagens).
- */
-function makeCtxMultiTable(tableResponses: Record<string, { data: unknown; error: unknown }>): ApiServiceCtx {
-  return {
-    admin: {
-      from: (table: string) => {
-        const resp = tableResponses[table] ?? { data: null, error: null }
-        const builder: Record<string, unknown> = {}
-        const terminal = () => Promise.resolve(resp)
-        const chain = () => builder
-        builder.select = chain
-        builder.eq = chain
-        builder.order = chain
-        builder.limit = chain
-        builder.lt = chain
-        builder.maybeSingle = terminal
-        // terminal para listagens (sem maybeSingle)
-        builder.then = (resolve: (v: unknown) => void) => {
-          resolve(resp)
-        }
-        return builder
       },
     } as unknown as SupabaseClient,
     accountId: 'acct-123',
@@ -298,24 +268,38 @@ describe('findConversationsByContact', () => {
 // ─── listMessages ─────────────────────────────────────────────────────────────
 
 describe('listMessages', () => {
-  it('lança NotFoundError quando a conversa pertence a outra conta', async () => {
-    // conversations: maybeSingle retorna null → getConversationById lança NotFoundError
+  it('lança NotFoundError e NÃO acessa messages quando a conversa pertence a outra conta', async () => {
+    // Invariante de segurança: getConversationById é o único tenant gate para messages.
+    // Se a conversa não pertence à conta, messages nunca deve ser consultada.
+    const tabelasAcessadas: string[] = []
+
     const admin = {
       from: (table: string) => {
+        // Registra todas as tabelas acessadas via from()
+        tabelasAcessadas.push(table)
+
         if (table === 'conversations') {
           const builder: Record<string, unknown> = {}
           const chain = () => builder
           builder.select = chain
           builder.eq = chain
+          // Retorna null → gate falha → NotFoundError
           builder.maybeSingle = () => Promise.resolve({ data: null, error: null })
           return builder
         }
+
+        // Qualquer outro from() (ex: messages) não deveria ser chamado
         return {}
       },
     } as unknown as SupabaseClient
 
     const ctx: ApiServiceCtx = { admin, accountId: 'acct-123', auditUserId: 'u-1' }
+
+    // Confirma que NotFoundError é lançado
     await expect(listMessages(ctx, 'conv-outra-conta', { limit: 30 })).rejects.toThrow(NotFoundError)
+
+    // Confirma que messages NUNCA foi acessada — gate disparou antes
+    expect(tabelasAcessadas).not.toContain('messages')
   })
 
   it('retorna mensagens em ordem cronológica (antiga → nova) e has_more=false quando ≤ limit', async () => {
@@ -465,5 +449,53 @@ describe('listMessages', () => {
     expect(msg.media_url).toBe('https://cdn.example.com/img.jpg')
     expect(msg.status).toBe('sent')
     expect(msg.created_at).toBe('2024-01-15T09:00:00Z')
+  })
+
+  it('repassa cursor before como .lt("created_at", before) para o query de messages', async () => {
+    // Garante que o branch "if (before)" não seja removido silenciosamente.
+    const convRow = makeConversationRow()
+    const msgRow = makeMessageRow({ id: 'msg-cursor', created_at: '2026-06-19T12:00:00Z' })
+    const BEFORE = '2026-06-20T00:00:00.000Z'
+
+    // Captura os argumentos passados a .lt() no builder de messages
+    const ltArgs: Array<[string, string]> = []
+
+    const admin = {
+      from: (table: string) => {
+        if (table === 'conversations') {
+          const builder: Record<string, unknown> = {}
+          const chain = () => builder
+          builder.select = chain
+          builder.eq = chain
+          builder.maybeSingle = () => Promise.resolve({ data: convRow, error: null })
+          return builder
+        }
+
+        if (table === 'messages') {
+          const response = { data: [msgRow], error: null }
+          const builder: Record<string, unknown> = {}
+          const chain = () => builder
+          builder.select = chain
+          builder.eq = chain
+          builder.order = chain
+          builder.limit = chain
+          // Registra os argumentos de .lt() para validação posterior
+          builder.lt = (column: string, value: string) => {
+            ltArgs.push([column, value])
+            return builder
+          }
+          builder.then = (resolve: (v: unknown) => void) => resolve(response)
+          return builder
+        }
+
+        return {}
+      },
+    } as unknown as SupabaseClient
+
+    const ctx: ApiServiceCtx = { admin, accountId: 'acct-123', auditUserId: 'u-1' }
+    await listMessages(ctx, 'conv-1', { limit: 10, before: BEFORE })
+
+    // Confirma que .lt('created_at', before) foi chamado no query de messages
+    expect(ltArgs).toContainEqual(['created_at', BEFORE])
   })
 })
