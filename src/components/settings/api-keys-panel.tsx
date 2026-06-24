@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ALL_SCOPES, API_KEY_SCOPE_META, SCOPE_MESSAGES_SEND } from '@/lib/auth/api-keys';
 import { useAuth } from '@/hooks/use-auth';
 import { SettingsPanelHead } from './settings-panel-head';
 
@@ -75,6 +76,13 @@ export function ApiKeysPanel() {
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [selectedScopes, setSelectedScopes] = useState<string[]>([SCOPE_MESSAGES_SEND]);
+
+  function toggleScope(scope: string) {
+    setSelectedScopes((prev) =>
+      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope],
+    );
+  }
   // Chave crua recém-criada — exibida UMA vez.
   const [createdKey, setCreatedKey] = useState<string | null>(null);
 
@@ -122,7 +130,7 @@ export function ApiKeysPanel() {
       const res = await fetch('/api/account/api-keys', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, scopes: selectedScopes }),
       });
       if (!res.ok) {
         const payload = await res.json().catch(() => ({}));
@@ -132,6 +140,7 @@ export function ApiKeysPanel() {
       const data = (await res.json()) as { key: string };
       setCreatedKey(data.key);
       setNewName('');
+      setSelectedScopes([SCOPE_MESSAGES_SEND]);
       void load();
     } catch (err) {
       console.error('[ApiKeysPanel] create error:', err);
@@ -337,6 +346,7 @@ export function ApiKeysPanel() {
           if (!next) {
             setNewName('');
             setCreatedKey(null);
+            setSelectedScopes([SCOPE_MESSAGES_SEND]);
           }
           setCreateOpen(next);
         }}
@@ -393,8 +403,7 @@ export function ApiKeysPanel() {
               <DialogHeader>
                 <DialogTitle className="text-popover-foreground">Nova chave de API</DialogTitle>
                 <DialogDescription className="text-muted-foreground">
-                  Dê um nome pra reconhecer onde a chave é usada. Ela poderá apenas{' '}
-                  <span className="font-medium">enviar mensagens</span> em conversas desta conta.
+                  Dê um nome e escolha o que a chave pode fazer.
                 </DialogDescription>
               </DialogHeader>
 
@@ -410,6 +419,28 @@ export function ApiKeysPanel() {
                     if (e.key === 'Enter' && !creating) void handleCreate();
                   }}
                 />
+              </div>
+
+              <div className="space-y-2 py-2">
+                <Label className="text-muted-foreground">Permissões da chave</Label>
+                <div className="space-y-2">
+                  {ALL_SCOPES.map((scope) => (
+                    <label key={scope} className="flex cursor-pointer items-start gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={selectedScopes.includes(scope)}
+                        onChange={() => toggleScope(scope)}
+                        className="mt-0.5 size-4 accent-primary"
+                      />
+                      <span>
+                        <span className="font-medium text-foreground">{API_KEY_SCOPE_META[scope].label}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {API_KEY_SCOPE_META[scope].description}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
               </div>
 
               <DialogFooter className="bg-popover border-border">
