@@ -12,6 +12,7 @@ import {
   resolveTagIdByName,
   resolveFieldIdByName,
   upsertContactByPhone,
+  updateContact,
   getContactById,
 } from './api-service'
 import type { ApiServiceCtx } from './api-service'
@@ -345,5 +346,131 @@ describe('upsertContactByPhone — validação prévia de nomes', () => {
 
     // insert nunca deve ter sido chamado
     expect(insertSpy).not.toHaveBeenCalled()
+  })
+})
+
+// ─── updateContact — isolamento de tenant ────────────────────────────────────
+
+describe('updateContact — isolamento de tenant', () => {
+  it('lança NotFoundError (404) quando o contactId não pertence à conta do ctx', async () => {
+    // O maybeSingle da verificação de ownership retorna null — contato de outra conta
+    const admin = {
+      from: (table: string) => {
+        if (table === 'contacts') {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  maybeSingle: () => Promise.resolve({ data: null, error: null }),
+                }),
+              }),
+            }),
+          }
+        }
+        return {}
+      },
+    } as unknown as SupabaseClient
+
+    const ctx: ApiServiceCtx = { admin, accountId: 'acct-minha', auditUserId: 'u-1' }
+
+    await expect(
+      updateContact(ctx, 'contato-de-outra-conta', { name: 'hacker' }),
+    ).rejects.toThrow(NotFoundError)
+
+    let thrown: unknown
+    try {
+      await updateContact(ctx, 'contato-de-outra-conta', { name: 'hacker' })
+    } catch (err) {
+      thrown = err
+    }
+    expect(thrown).toBeInstanceOf(NotFoundError)
+    expect((thrown as NotFoundError).status).toBe(404)
+  })
+})
+
+// ─── upsertContactByPhone — race backstop (23505) ───────────────────────────
+
+describe('upsertContactByPhone — race backstop (violação de unicidade)', () => {
+  it('não lança quando o insert retorna 23505 e o contato já existe (outro worker ganhou a corrida)', async () => {
+    const raceRow = {
+      id: 'c-race',
+      phone: '+5511955555555',
+      name: 'Carlos',
+      email: null,
+      company: null,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+      contact_tags: [],
+      contact_custom_values: [],
+    }
+
+    let contactCallCount = 0
+    const admin = {
+      from: (table: string) => {
+        if (table === 'contacts') {
+          contactCallCount++
+          // Primeira chamada: findExistingContact (LIKE) → nenhum existente
+          if (contactCallCount === 1) {
+            return {
+              select: () => ({
+                eq: () => ({
+                  like: () => Promise.resolve({ data: [], error: null }),
+                }),
+              }),
+            }
+          }
+          // Segunda chamada: insert → retorna violação de unicidade 23505
+          if (contactCallCount === 2) {
+            return {
+              insert: () => ({
+                select: () => ({
+                  single: () => Promise.resolve({ data: null, error: { code: '23505' } }),
+                }),
+              }),
+            }
+          }
+          // Terceira chamada: findExistingContact de retry (LIKE) → retorna o row existente
+          if (contactCallCount === 3) {
+            return {
+              select: () => ({
+                eq: () => ({
+                  like: () => Promise.resolve({ data: [{ id: 'c-race', phone: '+5511955555555' }], error: null }),
+                }),
+              }),
+            }
+          }
+          // Quarta chamada: update do race path
+          if (contactCallCount === 4) {
+            return {
+              update: () => ({
+                eq: () => ({
+                  eq: () => Promise.resolve({ data: null, error: null }),
+                }),
+              }),
+            }
+          }
+          // Quinta chamada: getContactById (maybeSingle final)
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  maybeSingle: () => Promise.resolve({ data: raceRow, error: null }),
+                }),
+              }),
+            }),
+          }
+        }
+        // contact_tags / contact_custom_values
+        return {
+          upsert: () => Promise.resolve({ data: null, error: null }),
+        }
+      },
+    } as unknown as SupabaseClient
+
+    const ctx: ApiServiceCtx = { admin, accountId: 'acct-1', auditUserId: 'u-1' }
+    const result = await upsertContactByPhone(ctx, { phone: '+5511955555555', name: 'Carlos' })
+
+    // Deve resolver sem lançar e retornar o contato encontrado após a corrida
+    expect(result.id).toBe('c-race')
   })
 })

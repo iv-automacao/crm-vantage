@@ -140,8 +140,9 @@ export async function listCustomFields(
 /**
  * Aplica uma tag a um contato via upsert idempotente.
  * Resolve o nome da tag antes de escrever.
+ * Não exportado: contactId já foi validado como pertencente à conta pelo chamador.
  */
-export async function applyTag(ctx: ApiServiceCtx, contactId: string, tagName: string): Promise<void> {
+async function applyTag(ctx: ApiServiceCtx, contactId: string, tagName: string): Promise<void> {
   const tagId = await resolveTagIdByName(ctx, tagName)
   const { error } = await ctx.admin
     .from('contact_tags')
@@ -153,8 +154,9 @@ export async function applyTag(ctx: ApiServiceCtx, contactId: string, tagName: s
 /**
  * Seta (ou atualiza) um campo customizado para um contato.
  * Resolve o nome do campo antes de escrever.
+ * Não exportado: contactId já foi validado como pertencente à conta pelo chamador.
  */
-export async function setCustomField(
+async function setCustomField(
   ctx: ApiServiceCtx,
   contactId: string,
   fieldName: string,
@@ -228,11 +230,15 @@ export async function upsertContactByPhone(
       if (isUniqueViolation(error)) {
         const raceExisting = await findExistingContact(admin, accountId, phone)
         if (raceExisting) {
-          await admin
+          const { error: updateError } = await admin
             .from('contacts')
             .update({ name, email, company, updated_at: new Date().toISOString() })
             .eq('id', raceExisting.id)
             .eq('account_id', accountId)
+          if (updateError) {
+            // Registra o erro mas prossegue — o contato já existe e o insert foi idempotente
+            console.error('[upsertContactByPhone] erro no update de corrida:', updateError)
+          }
           contactId = raceExisting.id
         } else {
           throw error
@@ -299,11 +305,18 @@ export async function updateContact(
     })),
   )
 
-  // Atualiza campos escalares se houver
-  if (Object.keys(scalarFields).length > 0) {
+  // Atualiza apenas os campos escalares permitidos (whitelist explícita).
+  // Evita que qualquer relaxamento futuro do schema permita sobrescrever
+  // colunas sensíveis como account_id ou user_id.
+  const allowedScalar: Partial<{ name: string | null; email: string | null; company: string | null }> = {}
+  if ('name' in scalarFields) allowedScalar.name = scalarFields.name as string | null
+  if ('email' in scalarFields) allowedScalar.email = scalarFields.email as string | null
+  if ('company' in scalarFields) allowedScalar.company = scalarFields.company as string | null
+
+  if (Object.keys(allowedScalar).length > 0) {
     const { error } = await admin
       .from('contacts')
-      .update({ ...scalarFields, updated_at: new Date().toISOString() })
+      .update({ ...allowedScalar, updated_at: new Date().toISOString() })
       .eq('id', contactId)
       .eq('account_id', accountId)
 
