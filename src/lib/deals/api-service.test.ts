@@ -453,6 +453,10 @@ describe('updateDeal — stage resolvida dentro do pipeline do deal', () => {
       Promise.resolve({ data: { id: 'stage-2', name: 'Proposta' }, error: null }),
     )
 
+    // Captura todos os pares (coluna, valor) passados via .eq() ao builder de pipeline_stages
+    // para garantir que o pipeline_id do DEAL (e não um parâmetro externo) foi usado.
+    const pipelineStageEqArgs: [string, unknown][] = []
+
     const admin = {
       from: (table: string) => {
         if (table === 'deals') {
@@ -486,15 +490,16 @@ describe('updateDeal — stage resolvida dentro do pipeline do deal', () => {
           }
         }
         if (table === 'pipeline_stages') {
-          return {
-            select: () => ({
-              eq: () => ({
-                eq: () => ({
-                  maybeSingle: pipelineStageSpy,
-                }),
-              }),
-            }),
+          // Builder que registra cada chamada .eq(coluna, valor) para inspeção posterior
+          const stagesBuilder = {
+            select: () => stagesBuilder,
+            eq: (col: string, val: unknown) => {
+              pipelineStageEqArgs.push([col, val])
+              return stagesBuilder
+            },
+            maybeSingle: pipelineStageSpy,
           }
+          return stagesBuilder
         }
         return {}
       },
@@ -507,5 +512,9 @@ describe('updateDeal — stage resolvida dentro do pipeline do deal', () => {
     expect(pipelineStageSpy).toHaveBeenCalled()
     expect(updateSpy).toHaveBeenCalled()
     expect(result.id).toBe('deal-1')
+
+    // Invariante de tenant: o pipeline_id usado na query de pipeline_stages
+    // deve ser o do DEAL ('pip-1'), nunca um valor fornecido externamente pelo cliente.
+    expect(pipelineStageEqArgs).toContainEqual(['pipeline_id', 'pip-1'])
   })
 })

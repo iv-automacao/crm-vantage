@@ -233,12 +233,14 @@ export async function createDeal(
   body: DealCreateBody,
 ): Promise<DealResource> {
   const { admin, accountId, auditUserId } = ctx
-  const { pipeline: pipelineName, stage: stageName, title, value, ...contactQuery } = body
+  // Desestruturação explícita — evita que campos futuros de DealCreateBody
+  // vazem silenciosamente para a query de contato via spread residual.
+  const { pipeline: pipelineName, stage: stageName, title, value, contact_phone, contact_id } = body
 
   // ── Passo 1-4: resolver todos os nomes antes de qualquer escrita ────────────
   const pipeline = await resolvePipelineByName(ctx, pipelineName)
   const stage = await resolveStageByName(ctx, pipeline.id, stageName)
-  const contactId = await resolveContact(ctx, contactQuery)
+  const contactId = await resolveContact(ctx, { contact_phone, contact_id })
   const currency = await resolveAccountCurrency(ctx)
 
   // ── Passo 5: inserir deal ───────────────────────────────────────────────────
