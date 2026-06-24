@@ -121,8 +121,13 @@ export async function POST(request: Request) {
   }
 
   if (effectiveSteps && effectiveSteps.length > 0) {
+    // insertSteps devolve a mensagem de erro do Supabase em caso de falha —
+    // logamos no servidor e respondemos genérico pra não vazar internals.
     const err = await insertSteps(automation.id, effectiveSteps)
-    if (err) return NextResponse.json({ error: err }, { status: 500 })
+    if (err) {
+      console.error('[POST /api/automations] insertSteps error:', err)
+      return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    }
   }
 
   return NextResponse.json({ automation }, { status: 201 })
