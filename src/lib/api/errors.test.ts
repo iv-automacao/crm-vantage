@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { validationError, errorEnvelope, ApiError, UnknownTagError, UnknownFieldError, NotFoundError } from './errors'
+import { validationError, errorEnvelope, ApiError, UnknownTagError, UnknownFieldError, NotFoundError, UnknownPipelineError, UnknownStageError } from './errors'
 import { toErrorResponse } from '@/lib/auth/account'
 
 describe('errorEnvelope', () => {
@@ -99,6 +99,20 @@ describe('ApiError e subclasses', () => {
     const err = new NotFoundError()
     expect(err.status).toBe(404)
     expect(err.code).toBe('not_found')
+  })
+
+  it('UnknownPipelineError tem status 422 e code unknown_pipeline', () => {
+    const err = new UnknownPipelineError('Vendas')
+    expect(err.status).toBe(422)
+    expect(err.code).toBe('unknown_pipeline')
+    expect(err.details?.[0].field).toBe('pipeline')
+  })
+
+  it('UnknownStageError tem status 422 e code unknown_stage', () => {
+    const err = new UnknownStageError('Proposta')
+    expect(err.status).toBe(422)
+    expect(err.code).toBe('unknown_stage')
+    expect(err.details?.[0].field).toBe('stage')
   })
 })
 

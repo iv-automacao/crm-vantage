@@ -42,6 +42,22 @@ export class ApiBadRequestError extends ApiError {
   }
 }
 
+export class UnknownPipelineError extends ApiError {
+  constructor(name: string) {
+    super(422, 'unknown_pipeline', `O pipeline '${name}' não existe nesta conta. Crie no CRM primeiro.`, [
+      { field: 'pipeline', message: `pipeline '${name}' não existe` },
+    ])
+  }
+}
+
+export class UnknownStageError extends ApiError {
+  constructor(name: string) {
+    super(422, 'unknown_stage', `A etapa '${name}' não existe neste pipeline.`, [
+      { field: 'stage', message: `etapa '${name}' não existe` },
+    ])
+  }
+}
+
 // Envelope padrão de erro da API — usado por todos os handlers.
 export function errorEnvelope(
   code: string,
