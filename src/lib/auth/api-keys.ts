@@ -20,6 +20,37 @@ export const API_KEY_PREFIX = "vtg_sk_";
 /** Escopo mínimo (e único, no v1) que uma chave pode ter. */
 export const SCOPE_MESSAGES_SEND = "messages:send";
 
+/** Escopo de leitura de contatos. */
+export const SCOPE_CONTACTS_READ = "contacts:read";
+
+/** Escopo de escrita/gerenciamento de contatos. */
+export const SCOPE_CONTACTS_WRITE = "contacts:write";
+
+/** Todos os scopes que uma chave pode ter. Fonte da verdade. */
+export const ALL_SCOPES = [
+  SCOPE_MESSAGES_SEND,
+  SCOPE_CONTACTS_READ,
+  SCOPE_CONTACTS_WRITE,
+] as const;
+
+/** Metadados pra UI (checkboxes) — label/descrição em português. */
+export const API_KEY_SCOPE_META: Record<string, { label: string; description: string }> = {
+  [SCOPE_MESSAGES_SEND]: { label: "Enviar mensagens", description: "Enviar mensagens em conversas desta conta." },
+  [SCOPE_CONTACTS_READ]: { label: "Ler contatos", description: "Buscar contatos e listar tags/campos." },
+  [SCOPE_CONTACTS_WRITE]: { label: "Gerenciar contatos", description: "Criar/atualizar contatos e aplicar tags/campos." },
+};
+
+/**
+ * Normaliza scopes vindos do cliente: mantém só os válidos, dedup,
+ * e cai pra ['messages:send'] se nada válido sobrar.
+ */
+export function sanitizeScopes(input: unknown): string[] {
+  const valid = new Set<string>(ALL_SCOPES);
+  const arr = Array.isArray(input) ? input.filter((s): s is string => typeof s === "string") : [];
+  const kept = [...new Set(arr)].filter((s) => valid.has(s));
+  return kept.length > 0 ? kept : [SCOPE_MESSAGES_SEND];
+}
+
 export interface GeneratedApiKey {
   /** Chave crua — mostrar ao criador UMA vez, nunca persistir. */
   key: string;
