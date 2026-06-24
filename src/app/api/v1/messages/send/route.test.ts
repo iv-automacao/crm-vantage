@@ -57,6 +57,8 @@ const fakeApiKeyCtx = {
   apiKeyId: 'key-id-test',
   accountId: 'acc-id-test',
   scopes: [SCOPE_MESSAGES_SEND],
+  createdByUserId: 'user-test',
+  ownerUserId: 'owner-test',
 }
 
 function makeReq(opts: { body?: unknown; auth?: string } = {}): NextRequest {

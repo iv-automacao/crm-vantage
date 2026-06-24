@@ -176,6 +176,8 @@ describe('defineRoute — auth: apiKey', () => {
       apiKeyId: 'key-id-1',
       accountId: 'acc-id-1',
       scopes: ['messages:send'],
+      createdByUserId: 'user-1',
+      ownerUserId: 'owner-1',
     }
     vi.mocked(apiKeyCtx.resolveApiKey).mockResolvedValue(fakeCtx)
     let capturedCtx: unknown = null

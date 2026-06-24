@@ -147,6 +147,10 @@ export const RATE_LIMITS = {
    *  conversational bot while still bounding a runaway n8n loop or a
    *  leaked key blasting the WhatsApp number. */
   apiSend: { limit: 120, windowMs: 60_000 },
+  /** Escrita de contatos via API (upsert/patch). Por conta. */
+  contactsWrite: { limit: 120, windowMs: 60_000 },
+  /** Leitura de contatos/tags/campos via API. Mais folgado. */
+  contactsRead: { limit: 240, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

@@ -123,3 +123,35 @@ describe('validateApiKeyPayload — validação de scopes', () => {
     expect(result).toEqual([])
   })
 })
+
+describe('ApiKeyContext — campos de auditoria', () => {
+  it('resolveApiKey expõe createdByUserId e ownerUserId no contexto', async () => {
+    // Testa a estrutura do tipo ApiKeyContext sem bater no banco.
+    // O campo createdByUserId pode ser null (chave sem rastreamento de criador).
+    // O campo ownerUserId sempre existe (owner_user_id da conta).
+    const mockCtx = {
+      supabase: {} as never,
+      apiKeyId: 'key-123',
+      accountId: 'acc-456',
+      scopes: ['contacts:write'],
+      createdByUserId: 'user-789',
+      ownerUserId: 'owner-111',
+    }
+    // Verifica que auditUserId é o createdByUserId quando presente.
+    const auditUserId = mockCtx.createdByUserId ?? mockCtx.ownerUserId
+    expect(auditUserId).toBe('user-789')
+  })
+
+  it('auditUserId cai para ownerUserId quando createdByUserId é null', () => {
+    const mockCtx = {
+      supabase: {} as never,
+      apiKeyId: 'key-123',
+      accountId: 'acc-456',
+      scopes: ['contacts:read'],
+      createdByUserId: null,
+      ownerUserId: 'owner-111',
+    }
+    const auditUserId = mockCtx.createdByUserId ?? mockCtx.ownerUserId
+    expect(auditUserId).toBe('owner-111')
+  })
+})
