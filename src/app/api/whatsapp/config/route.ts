@@ -184,7 +184,11 @@ export async function POST(request: Request) {
       )
     }
 
-    const body = await request.json()
+    // Guard contra body malformado — request.json() lança em JSON inválido.
+    const body = await request.json().catch(() => null)
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
     const { phone_number_id, waba_id, access_token, verify_token, pin } = body
 
     if (!access_token || !phone_number_id) {

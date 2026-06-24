@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { resumePendingExecution } from '@/lib/automations/engine'
@@ -19,8 +20,14 @@ export async function GET(request: Request) {
   if (!expected) {
     return NextResponse.json({ error: 'cron not configured' }, { status: 503 })
   }
-  const supplied = request.headers.get('x-cron-secret')
-  if (supplied !== expected) {
+  // Comparação em tempo constante — evita timing attack que permitiria
+  // recuperar o secret byte a byte medindo delta de tempo de resposta.
+  // timingSafeEqual exige buffers de mesmo tamanho, então o length check
+  // vaza só o tamanho do secret (não sensível).
+  const supplied = request.headers.get('x-cron-secret') ?? ''
+  const suppliedBuf = Buffer.from(supplied)
+  const expectedBuf = Buffer.from(expected)
+  if (suppliedBuf.length !== expectedBuf.length || !timingSafeEqual(suppliedBuf, expectedBuf)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

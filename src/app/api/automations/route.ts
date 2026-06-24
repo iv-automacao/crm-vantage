@@ -19,7 +19,10 @@ export async function GET() {
     .from('automations')
     .select('*')
     .order('created_at', { ascending: false })
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    console.error('[GET /api/automations] DB error:', error.message)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
   return NextResponse.json({ automations: data ?? [] })
 }
 
@@ -110,8 +113,9 @@ export async function POST(request: Request) {
     .single()
 
   if (insertErr || !automation) {
+    console.error('[POST /api/automations] insert error:', insertErr?.message ?? 'unknown')
     return NextResponse.json(
-      { error: insertErr?.message ?? 'insert failed' },
+      { error: 'Internal server error' },
       { status: 500 },
     )
   }
