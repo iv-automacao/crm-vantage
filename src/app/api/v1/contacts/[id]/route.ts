@@ -15,6 +15,7 @@ import { SCOPE_CONTACTS_READ, SCOPE_CONTACTS_WRITE } from '@/lib/auth/api-keys'
 import { ContactPatchBody } from '@/lib/api/schemas/contacts'
 import { RATE_LIMITS } from '@/lib/rate-limit'
 import { getContactById, updateContact } from '@/lib/contacts/api-service'
+import { ApiBadRequestError } from '@/lib/api/errors'
 
 // Extrai o ApiKeyContext tipado do contexto resolvido.
 function apiKeyOf(ctx: ResolvedCtx): ApiKeyContext {
@@ -30,10 +31,13 @@ function svcCtx(k: ApiKeyContext) {
   }
 }
 
-// Extrai o último segmento do pathname — evita depender de params do Next 16.
+// Extrai o último segmento não-vazio do pathname.
+// Filtra segmentos vazios para lidar com trailing slash (/contacts/<id>/)
+// sem retornar string vazia que geraria um 404 confuso.
 function extractId(req: Request): string {
-  const segments = new URL(req.url).pathname.split('/')
-  return segments[segments.length - 1]
+  const id = new URL(req.url).pathname.split('/').filter(Boolean).pop()
+  if (!id) throw new ApiBadRequestError('id do contato ausente')
+  return id
 }
 
 export const GET = defineRoute({

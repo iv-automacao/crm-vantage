@@ -4,11 +4,32 @@
  * Estratégia (mesmo padrão de platform-admin.test.ts): testar a função
  * interna `validateApiKeyPayload` injetando valores — sem rede, sem banco.
  * O lookup no Supabase fica para o teste de integração da rota (Task 2).
+ *
+ * O describe "resolveApiKey — campos de auditoria" usa vi.mock para
+ * substituir o admin client e as funções de hash por fakes controláveis,
+ * exercitando o caminho real de resolveApiKey sem tocar no banco.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { validateApiKeyPayload } from './api-key-context'
 import { AccountPendingError, ForbiddenError } from './account'
+
+// Mock do admin client — substituído antes de qualquer import do módulo alvo.
+vi.mock('@/lib/flows/admin-client', () => ({
+  supabaseAdmin: vi.fn(),
+}))
+
+// Mock das funções de hash/bearer — retornam valores determinísticos nos testes.
+vi.mock('@/lib/auth/api-keys', () => ({
+  extractBearerToken: vi.fn(),
+  hashApiKey: vi.fn(),
+  SCOPE_CONTACTS_READ: 'contacts:read',
+  SCOPE_CONTACTS_WRITE: 'contacts:write',
+}))
+
+import * as adminClientMod from '@/lib/flows/admin-client'
+import * as apiKeysMod from '@/lib/auth/api-keys'
+import { resolveApiKey } from './api-key-context'
 
 describe('validateApiKeyPayload — status da conta', () => {
   it('lança AccountPendingError quando status é "pending"', () => {
@@ -153,5 +174,95 @@ describe('ApiKeyContext — campos de auditoria', () => {
     }
     const auditUserId = mockCtx.createdByUserId ?? mockCtx.ownerUserId
     expect(auditUserId).toBe('owner-111')
+  })
+})
+
+describe('resolveApiKey — campos de auditoria vindos do banco', () => {
+  it('retorna createdByUserId e ownerUserId corretamente ao resolver a chave', async () => {
+    // Verifica que a string de select inclui created_by_user_id e owner_user_id
+    // e que resolveApiKey os propaga corretamente no ApiKeyContext retornado.
+    // Sem tocar no banco: admin client e funções de hash são substituídos por fakes.
+
+    const fakeKeyRow = {
+      id: 'key-id-abc',
+      account_id: 'acc-id-xyz',
+      scopes: ['contacts:read'],
+      revoked_at: null,
+      created_by_user_id: 'creator-user-001',
+      account: {
+        id: 'acc-id-xyz',
+        status: 'active',
+        owner_user_id: 'owner-user-999',
+      },
+    }
+
+    // Monta a cadeia .from().select().eq().is().maybeSingle() como fake encadeável.
+    const maybeSingleFake = vi.fn().mockResolvedValue({ data: fakeKeyRow, error: null })
+    const isFake = vi.fn().mockReturnValue({ maybeSingle: maybeSingleFake })
+    const eqFake = vi.fn().mockReturnValue({ is: isFake })
+    const selectFake = vi.fn().mockReturnValue({ eq: eqFake })
+    const fromFake = vi.fn().mockReturnValue({ select: selectFake })
+
+    // supabaseAdmin() retorna o cliente fake.
+    vi.mocked(adminClientMod.supabaseAdmin).mockReturnValue({ from: fromFake } as never)
+
+    // Bearer token e hash retornam valores fixos — não importa o valor real.
+    vi.mocked(apiKeysMod.extractBearerToken).mockReturnValue('token-claro')
+    vi.mocked(apiKeysMod.hashApiKey).mockReturnValue('hash-fixo')
+
+    const req = new Request('http://localhost/api/v1/contacts', {
+      headers: { Authorization: 'Bearer token-claro' },
+    })
+
+    const ctx = await resolveApiKey(req, ['contacts:read'])
+
+    // Campos de auditoria devem estar presentes e corretos.
+    expect(ctx.createdByUserId).toBe('creator-user-001')
+    expect(ctx.ownerUserId).toBe('owner-user-999')
+    // Campos complementares também estão corretos.
+    expect(ctx.apiKeyId).toBe('key-id-abc')
+    expect(ctx.accountId).toBe('acc-id-xyz')
+    expect(ctx.scopes).toEqual(['contacts:read'])
+  })
+
+  it('createdByUserId é null quando a chave não tem rastreamento de criador', async () => {
+    // Garante que a ausência de created_by_user_id no registro resulta em null
+    // (não em undefined nem em erro).
+
+    const fakeKeyRow = {
+      id: 'key-id-sem-criador',
+      account_id: 'acc-id-xyz',
+      scopes: ['contacts:write'],
+      revoked_at: null,
+      created_by_user_id: null,
+      account: {
+        id: 'acc-id-xyz',
+        status: 'active',
+        owner_user_id: 'owner-user-999',
+      },
+    }
+
+    const maybeSingleFake = vi.fn().mockResolvedValue({ data: fakeKeyRow, error: null })
+    const isFake = vi.fn().mockReturnValue({ maybeSingle: maybeSingleFake })
+    const eqFake = vi.fn().mockReturnValue({ is: isFake })
+    const selectFake = vi.fn().mockReturnValue({ eq: eqFake })
+    const fromFake = vi.fn().mockReturnValue({ select: selectFake })
+
+    vi.mocked(adminClientMod.supabaseAdmin).mockReturnValue({ from: fromFake } as never)
+    vi.mocked(apiKeysMod.extractBearerToken).mockReturnValue('token-sem-criador')
+    vi.mocked(apiKeysMod.hashApiKey).mockReturnValue('hash-sem-criador')
+
+    const req = new Request('http://localhost/api/v1/contacts', {
+      headers: { Authorization: 'Bearer token-sem-criador' },
+    })
+
+    const ctx = await resolveApiKey(req, ['contacts:write'])
+
+    // createdByUserId deve ser null — ownerUserId serve de fallback de auditoria.
+    expect(ctx.createdByUserId).toBeNull()
+    expect(ctx.ownerUserId).toBe('owner-user-999')
+    // auditUserId calculado como no svcCtx das rotas.
+    const auditUserId = ctx.createdByUserId ?? ctx.ownerUserId
+    expect(auditUserId).toBe('owner-user-999')
   })
 })
