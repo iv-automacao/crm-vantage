@@ -299,11 +299,14 @@ export async function sendMessageToConversation(
     .single()
 
   if (msgError) {
+    // Detalhe do erro do banco fica só no log do servidor — a mensagem
+    // de retorno é genérica pra não vazar internals pra clientes externos
+    // (a rota pública /api/v1/messages/send repassa este `error` verbatim).
     console.error('Error inserting sent message:', msgError)
     return {
       ok: false,
       status: 500,
-      error: `Message sent to Meta but failed to save to DB: ${msgError.message}`,
+      error: 'Message sent to Meta but failed to save to DB',
     }
   }
 
