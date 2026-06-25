@@ -7,6 +7,7 @@ import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
+import { buildMessageReceivedPayload, dispatchMessageReceived } from '@/lib/webhooks/dispatch'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -281,7 +282,10 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           // inserts that need it for NOT NULL FK compliance. Always
           // the admin who saved the WhatsApp config.
           config.user_id,
-          decryptedAccessToken
+          decryptedAccessToken,
+          // Metadados crus da Meta (phone_number_id, display_phone_number)
+          // repassados ao payload de saída do webhook.
+          value.metadata
         )
       }
     }
@@ -515,7 +519,10 @@ async function processMessage(
   // (contacts, conversations). Always the admin who saved the
   // WhatsApp config; the choice is arbitrary post-017 but stable.
   configOwnerUserId: string,
-  accessToken: string
+  accessToken: string,
+  // Metadados crus do value.metadata da Meta (phone_number_id,
+  // display_phone_number) — repassados ao webhook de saída.
+  metaMetadata: unknown = undefined
 ) {
   const senderPhone = normalizePhone(message.from)
   const contactName = contact.profile.name
@@ -621,6 +628,21 @@ async function processMessage(
     console.error('Error inserting message:', msgError)
     return
   }
+
+  // Webhook de saída (best-effort): reencaminha o payload completo da Meta
+  // pros endpoints da conta. Não bloqueia nem derruba o processamento.
+  await dispatchMessageReceived(
+    supabaseAdmin(),
+    accountId,
+    buildMessageReceivedPayload({
+      accountId,
+      conversationId: conversation.id,
+      contact: { id: contactRecord.id, phone: contactRecord.phone, name: contactRecord.name ?? null },
+      metaMessage: message,       // value.messages[i] cru
+      metaContact: contact,       // value.contacts[i] cru
+      metaMetadata: metaMetadata, // value.metadata cru (novo parâmetro)
+    }),
+  )
 
   // Update conversation
   const { error: convError } = await supabaseAdmin()
