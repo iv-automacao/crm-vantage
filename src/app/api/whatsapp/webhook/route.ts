@@ -8,6 +8,7 @@ import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { buildMessageReceivedPayload, dispatchMessageReceived } from '@/lib/webhooks/dispatch'
+import { captureCtwaReferral } from '@/lib/capi/referral'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -643,6 +644,11 @@ async function processMessage(
       metaMetadata: metaMetadata, // value.metadata cru (novo parâmetro)
     }),
   )
+
+  // Captura de atribuição CTWA (best-effort): se o lead veio de um anúncio
+  // Click-to-WhatsApp, guarda o `ctwa_clid` no contato pra devolver a
+  // conversão pra Meta quando o negócio fechar (CAPI).
+  await captureCtwaReferral(supabaseAdmin(), contactRecord.id, message)
 
   // Update conversation
   const { error: convError } = await supabaseAdmin()
