@@ -120,10 +120,10 @@ export interface ConversionEvent {
   datasetId: string
   accessToken: string
   eventName: string          // ex.: 'Purchase'
-  eventId: string            // capi_events.id — dedup na Meta
-  eventTimeUnix: number
+  eventId: string            // = deal_id — dedup estável na Meta (mesma venda nunca conta 2x)
+  eventTimeUnix: number      // = momento do 'won' (capi_events.created_at), não o do envio
   ctwaClid: string
-  wabaId: string | null      // de whatsapp_config.waba_id, quando disponível
+  wabaId: string | null      // de whatsapp_config.waba_id, quando disponível (ver nota de grounding)
   value: number | null
   currency: string | null
 }
@@ -141,16 +141,18 @@ Corpo enviado:
     "event_id": "<eventId>" }],
   "access_token": "<accessToken>" }
 ```
-> `custom_data` só inclui `value`/`currency` quando há valor (> 0). `whatsapp_business_account_id` omitido se `wabaId` nulo.
+> `custom_data` só inclui `value`/`currency` quando há valor (> 0). `whatsapp_business_account_id` omitido se `wabaId` nulo. **`event_id = deal_id`** (não o id da linha): a mesma venda nunca conta 2x na Meta, mesmo que o deal vá `won→lost→won` (re-enfileira) ou você clique "reenviar". **`event_time`** = `capi_events.created_at` (instante do `won`), pra atribuição fiel mesmo com o cron enviando minutos depois.
 
 ### Dispatch (`src/lib/capi/dispatch.ts`)
-`processPendingCapiEvents(admin, limit = 50)`: busca `capi_events` com `status IN ('pending','failed')` ordenado por `created_at`. Para cada um:
+`MAX_CAPI_ATTEMPTS = 5`. `processPendingCapiEvents(admin, limit = 50)`: busca `capi_events` com `status='pending'` **OU** (`status='failed'` **E** `attempts < MAX_CAPI_ATTEMPTS`), ordenado por `created_at`. (Um `failed` que estourou as tentativas fica parado — não some — e só volta pelo "reenviar".) Para cada um:
 1. Carrega `capi_settings` da conta. Sem config **ativa** (`is_active` + `dataset_id` + `access_token`) → `status='skipped'`, `last_error='capi_inactive'`.
 2. Carrega `contacts.ctwa_clid`/`referral` do `contact_id`. Sem `ctwa_clid` → `status='skipped'`, `last_error='no_ctwa_clid'` (deal não veio de anúncio CTWA).
-3. Resolve `waba_id` da conta (via `whatsapp_config`, best-effort — pode ser nulo).
-4. `attempts += 1`; chama `sendConversionEvent`. `ok` → `status='sent'`, `sent_at=now()`, `meta_response`=corpo. `!ok` → `status='failed'`, `last_error`=resumo, `meta_response`=corpo (retry no próximo cron).
+3. Resolve `waba_id` da conta (best-effort — pode ser nulo; ver nota de grounding abaixo).
+4. `attempts += 1`; chama `sendConversionEvent` com `eventId = deal_id` e `eventTimeUnix = floor(created_at)`. `ok` → `status='sent'`, `sent_at=now()`, `meta_response`=corpo. `!ok` → `status='failed'`, `last_error`=resumo, `meta_response`=corpo (retry no próximo cron, até `MAX_CAPI_ATTEMPTS`).
 
-`event_name` usado = o da `capi_settings` da conta (não o DEFAULT da linha), pra refletir mudança de config.
+`event_name` usado = o da `capi_settings` da conta (não o DEFAULT da linha), pra refletir mudança de config. O "reenviar" zera `attempts` (volta `status='pending'`, `attempts=0`, `last_error=null`).
+
+> **Grounding `waba_id`:** `whatsapp_config` é chaveado por `user_id` (`UNIQUE(user_id)`), não por `account_id`. Resolver pela config dona do WhatsApp da conta — o mesmo caminho que o inbound webhook usa pra resolver a conta a partir do `phone_number_id` (`configOwnerUserId`). Se ambíguo/ausente, **omitir** `whatsapp_business_account_id` (o `ctwa_clid` já basta pro match). Não bloqueia o envio.
 
 ### Cron (`src/app/api/capi/cron/route.ts`)
 Espelha `automations/cron`: `x-cron-secret` vs `AUTOMATION_CRON_SECRET` (timing-safe), 401 se não bater. Chama `processPendingCapiEvents(supabaseAdmin())`. Retorna `{ processed, sent, skipped, failed }`. Agendado no Vercel cron (ex.: a cada 5 min). `maxDuration` adequado.
@@ -158,7 +160,7 @@ Espelha `automations/cron`: `x-cron-secret` vs `AUTOMATION_CRON_SECRET` (timing-
 ### Gestão — painel + rotas de sessão (admin-only)
 - `GET /api/account/capi` → `{ dataset_id, event_name, is_active, has_access_token: boolean }` (**token nunca volta**, só um booleano de presença). `PUT /api/account/capi` → upsert (`dataset_id`, `access_token?` — só atualiza se enviado não-vazio —, `event_name`, `is_active`). `requireRole('admin')`, rate limit `adminAction`. Validação: `is_active=true` exige `dataset_id` + token presente (no body ou já salvo) → senão 422.
 - `GET /api/account/capi/events?limit=` → últimas conversões da conta (`id, status, event_name, value, currency, last_error, created_at, sent_at`).
-- `POST /api/account/capi/events/[id]/resend` → seta `status='pending'`, `last_error=null` (só eventos da conta; ownership via `account_id`). 404 se não for da conta.
+- `POST /api/account/capi/events/[id]/resend` → seta `status='pending'`, `attempts=0`, `last_error=null` (só eventos da conta; ownership via `account_id`). 404 se não for da conta.
 - `capi-panel.tsx` espelha `webhooks-panel.tsx`: form de config (Dataset ID, Access Token com placeholder mascarado se já existe, evento, toggle ativo) + tabela de eventos recentes com botão "reenviar". Nova seção `capi` em `settings-sections.ts` (grupo workspace, ícone tipo `Target`/`TrendingUp`), admin-only.
 
 ### Erros / segurança
@@ -172,8 +174,8 @@ Espelha `automations/cron`: `x-cron-secret` vs `AUTOMATION_CRON_SECRET` (timing-
 - Outros eventos/gatilhos (lead qualificado por etapa; lead novo na primeira resposta) — o mapeamento já é extensível.
 - Hash de telefone/e-mail como sinal extra de match (advanced matching) além do `ctwa_clid`.
 - Criptografar `access_token` em repouso (hoje texto, admin-only — igual ao secret do webhook).
-- Backoff exponencial / limite de tentativas com dead-letter (hoje retry simples a cada cron).
-- Dedup avançado além do `event_id` que a Meta já usa.
+- Backoff exponencial (hoje retry a intervalo fixo do cron, com teto de `MAX_CAPI_ATTEMPTS=5` tentativas).
+- Claim pattern pra crons sobrepostos (com `event_id=deal_id` estável, envio duplicado é inofensivo — a Meta deduplica).
 - Janela de atribuição / expiração do `ctwa_clid` no nosso lado (a Meta resolve a atribuição).
 
 ## Verificação (E2E)
@@ -183,7 +185,7 @@ Espelha `automations/cron`: `x-cron-secret` vs `AUTOMATION_CRON_SECRET` (timing-
 4. **Config:** painel CAPI (admin) salva Dataset ID + token + evento + ativo; GET nunca devolve o token (só `has_access_token`); `is_active=true` sem dataset/token → 422.
 5. **Conversão (caminho feliz):** deal vira `won` (pelo kanban) → trigger enfileira `capi_events` pending → cron envia → `sent` + `sent_at` + `meta_response`; o anúncio recebe a conversão `Purchase` com valor/moeda e `event_id`.
 6. **Skips:** deal won de contato **sem** `ctwa_clid` → `skipped`/`no_ctwa_clid`. Deal won de conta **sem CAPI ativo** → `skipped`/`capi_inactive`. Nenhum POST à Meta nesses casos.
-7. **Retry/reenvio:** token inválido → `failed` + `last_error`; próximo cron tenta de novo; botão "reenviar" no painel volta pra `pending`.
+7. **Retry/reenvio:** token inválido → `failed` + `last_error` + `attempts` incrementa; próximo cron tenta de novo até `MAX_CAPI_ATTEMPTS=5`, depois para (fica `failed`, não some); botão "reenviar" volta pra `pending` com `attempts=0`. Re-won do mesmo deal não conta 2x na Meta (`event_id=deal_id`).
 8. **Isolamento/segurança:** cron sem `x-cron-secret` correto → 401. Não-admin → 403 no painel/rotas. Evento de outra conta nunca aparece/reenvia.
 9. **Não-regressão:** API `PATCH /api/v1/deals/{id}` marcando `won` também dispara o trigger (mesmo caminho de banco). Inbound sem referral segue 200 normal.
 
