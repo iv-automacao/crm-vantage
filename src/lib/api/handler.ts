@@ -110,7 +110,7 @@ export function defineRoute<B = undefined, Q = undefined>(config: RouteConfig<B,
 
       // 2) Rate limit (opcional)
       if (config.rateLimit) {
-        const r = checkRateLimit(config.rateLimit.key(ctx, req), config.rateLimit.preset)
+        const r = await checkRateLimit(config.rateLimit.key(ctx, req), config.rateLimit.preset)
         if (!r.success) return rateLimitResponse(r)
       }
 

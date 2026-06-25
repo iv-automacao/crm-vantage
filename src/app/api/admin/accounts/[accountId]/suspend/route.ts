@@ -27,7 +27,7 @@ export async function POST(
     const admin = await requirePlatformAdmin();
 
     // Rate limit por admin — evita ações em massa acidentais.
-    const limit = checkRateLimit(
+    const limit = await checkRateLimit(
       `adminAction:${admin.userId}`,
       RATE_LIMITS.adminAction,
     );

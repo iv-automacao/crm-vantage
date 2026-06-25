@@ -20,7 +20,7 @@ export async function PUT(request: Request) {
   try {
     const ctx = await requireRole('admin')
 
-    const rl = checkRateLimit(`capi-cfg:${ctx.accountId}`, RATE_LIMITS.adminAction)
+    const rl = await checkRateLimit(`capi-cfg:${ctx.accountId}`, RATE_LIMITS.adminAction)
     if (!rl.success) return rateLimitResponse(rl)
 
     const input = (await request.json().catch(() => null)) as CapiSettingsInput | null

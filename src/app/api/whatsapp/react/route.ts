@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const limit = checkRateLimit(`react:${user.id}`, RATE_LIMITS.react);
+    const limit = await checkRateLimit(`react:${user.id}`, RATE_LIMITS.react);
     if (!limit.success) {
       return rateLimitResponse(limit);
     }
