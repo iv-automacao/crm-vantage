@@ -1,97 +1,110 @@
 /**
- * In-memory per-key rate limiter.
+ * Rate limiter com backend distribuído via Upstash Redis.
  *
- * Fixed-window counter (not token bucket): every identifier gets a
- * fresh N-request budget each window. Simple, allocation-light, and
- * fine for a single-instance VPS — which is how forkers of this
- * template will usually deploy.
+ * Estratégia: fixed-window por chave.
+ * - Quando UPSTASH_REDIS_REST_URL + TOKEN estão configurados, usa o
+ *   Upstash (distribuído, funciona sob Vercel fan-out/multi-região).
+ * - Caso contrário, cai no fallback local em Map (dev/test/CI).
+ * - Fail-open: qualquer erro do Upstash emite warn e deixa a requisição
+ *   passar — rate limit é proteção, não pode derrubar tráfego legítimo.
  *
- * Trade-off: a single Node process holds the Map, so horizontal scale
- * (multiple regions, multiple Hostinger nodes, Vercel serverless fan-
- * out) silently defeats the limit. If you scale beyond one instance,
- * swap the `check` implementation for Redis / Upstash / Cloudflare
- * Durable Objects keeping the same return shape. The call sites won't
- * change.
- *
- * Memory: entries are ~50 bytes each. With LIGHT_SWEEP below, expired
- * keys get cleared opportunistically on every ~1 000th call, so a
- * healthy instance stays in the low-MB range even with thousands of
- * distinct users. No background timer — works in serverless edge
- * runtimes that don't keep timers alive across requests.
+ * Memory (fallback local): entradas ~50 bytes cada. Com LIGHT_SWEEP, chaves
+ * expiradas são limpas a cada ~1.000 chamadas sem timer de background —
+ * compatível com edge runtimes que não mantêm timers vivos entre requests.
  */
 
 import { NextResponse } from 'next/server';
+import { Ratelimit } from '@upstash/ratelimit';
+import { Redis } from '@upstash/redis';
 
 export interface RateLimitOptions {
-  /** Max requests allowed in `windowMs`. */
+  /** Máximo de requisições permitidas em `windowMs`. */
   limit: number;
-  /** Window size, milliseconds. */
+  /** Tamanho da janela, em milissegundos. */
   windowMs: number;
 }
 
 export interface RateLimitResult {
   success: boolean;
-  /** Requests still allowed in the current window. */
+  /** Requisições ainda permitidas na janela atual. */
   remaining: number;
-  /** Unix ms when the bucket refills. */
+  /** Unix ms quando o bucket recarrega. */
   reset: number;
   limit: number;
 }
 
-interface Entry {
-  count: number;
-  resetAt: number;
-}
-
+// ───────────── Fallback local (Map em memória) ─────────────
+// Usado quando o Upstash não está configurado (dev/test/CI). Em produção
+// na Vercel, o Map é por-instância e NÃO segura sob fan-out — por isso o
+// Upstash. Mantido como fallback que nunca derruba o app.
+interface Entry { count: number; resetAt: number; }
 const buckets = new Map<string, Entry>();
-
-// Opportunistic cleanup. Running a sweep on every call would be
-// quadratic; running it 1-in-N lets the Map self-drain without a
-// background timer.
 const LIGHT_SWEEP_EVERY = 1000;
 let callsSinceSweep = 0;
 
 function sweepExpired(now: number) {
-  for (const [k, v] of buckets) {
-    if (v.resetAt <= now) buckets.delete(k);
-  }
+  for (const [k, v] of buckets) if (v.resetAt <= now) buckets.delete(k);
 }
 
-export function checkRateLimit(
-  key: string,
-  { limit, windowMs }: RateLimitOptions,
-): RateLimitResult {
+function checkRateLimitLocal(key: string, { limit, windowMs }: RateLimitOptions): RateLimitResult {
   const now = Date.now();
-
-  callsSinceSweep += 1;
-  if (callsSinceSweep >= LIGHT_SWEEP_EVERY) {
-    callsSinceSweep = 0;
-    sweepExpired(now);
-  }
-
+  if (++callsSinceSweep >= LIGHT_SWEEP_EVERY) { callsSinceSweep = 0; sweepExpired(now); }
   const entry = buckets.get(key);
-
   if (!entry || entry.resetAt <= now) {
     buckets.set(key, { count: 1, resetAt: now + windowMs });
     return { success: true, remaining: limit - 1, reset: now + windowMs, limit };
   }
-
-  if (entry.count >= limit) {
-    return { success: false, remaining: 0, reset: entry.resetAt, limit };
-  }
-
+  if (entry.count >= limit) return { success: false, remaining: 0, reset: entry.resetAt, limit };
   entry.count += 1;
-  return {
-    success: true,
-    remaining: limit - entry.count,
-    reset: entry.resetAt,
-    limit,
-  };
+  return { success: true, remaining: limit - entry.count, reset: entry.resetAt, limit };
+}
+
+// ───────────── Backend Upstash (distribuído) ─────────────
+const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
+const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+const upstashEnabled = Boolean(UPSTASH_URL && UPSTASH_TOKEN);
+
+let redis: Redis | null = null;
+const limiterCache = new Map<string, Ratelimit>();
+
+function getLimiter(opts: RateLimitOptions): Ratelimit {
+  if (!redis) redis = new Redis({ url: UPSTASH_URL!, token: UPSTASH_TOKEN! });
+  const cacheKey = `${opts.limit}:${opts.windowMs}`;
+  let rl = limiterCache.get(cacheKey);
+  if (!rl) {
+    rl = new Ratelimit({
+      redis,
+      limiter: Ratelimit.fixedWindow(opts.limit, `${opts.windowMs} ms`),
+      prefix: 'vtg-rl',
+      analytics: false,
+    });
+    limiterCache.set(cacheKey, rl);
+  }
+  return rl;
 }
 
 /**
- * Standard 429 response with the headers clients expect (RFC 6585 +
- * draft-ietf-httpapi-ratelimit-headers). Callers just `return` this.
+ * Verifica e consome 1 do orçamento de `key`. Distribuído via Upstash quando
+ * configurado; senão, Map local. Fail-open: qualquer erro do Upstash deixa
+ * passar (warn) — o rate limit é proteção, não pode derrubar tráfego legítimo.
+ */
+export async function checkRateLimit(
+  key: string,
+  opts: RateLimitOptions,
+): Promise<RateLimitResult> {
+  if (!upstashEnabled) return checkRateLimitLocal(key, opts);
+  try {
+    const r = await getLimiter(opts).limit(key);
+    return { success: r.success, remaining: r.remaining, reset: r.reset, limit: r.limit };
+  } catch {
+    console.warn('[rate-limit] Upstash indisponível — fail-open');
+    return { success: true, remaining: opts.limit - 1, reset: Date.now() + opts.windowMs, limit: opts.limit };
+  }
+}
+
+/**
+ * Resposta 429 padrão com os headers que os clientes esperam (RFC 6585 +
+ * draft-ietf-httpapi-ratelimit-headers). Callers apenas fazem `return` disso.
  */
 export function rateLimitResponse(result: RateLimitResult): NextResponse {
   const retryAfterSec = Math.max(1, Math.ceil((result.reset - Date.now()) / 1000));
@@ -112,40 +125,31 @@ export function rateLimitResponse(result: RateLimitResult): NextResponse {
   );
 }
 
-/** Preconfigured budgets, tweak here not at call sites. */
+/** Orçamentos pré-configurados — ajustar aqui, não nos call sites. */
 export const RATE_LIMITS = {
-  /** Individual message send. 60/min per user = one per second
-   *  sustained, comfortable for a live human typing. */
+  /** Envio individual de mensagem. 60/min por usuário = um por segundo
+   *  sustentado, confortável para um humano digitando ao vivo. */
   send: { limit: 60, windowMs: 60_000 },
-  /** Broadcast dispatch. 5/min per user — even a 1 000-recipient
-   *  broadcast is one call; this caps the rate at which a single user
-   *  can launch campaigns, not the messages inside one. */
+  /** Disparo de broadcast. 5/min por usuário — mesmo um broadcast de 1.000
+   *  destinatários é uma chamada; isso limita a taxa de lançamento de
+   *  campanhas, não as mensagens dentro de uma. */
   broadcast: { limit: 5, windowMs: 60_000 },
-  /** Reaction add/swap/remove. More permissive than send — users
-   *  fidget with reactions and a single "swap" is actually two calls
-   *  (remove + add) under the hood. */
+  /** Adicionar/trocar/remover reação. Mais permissivo que send — usuários
+   *  mexem muito em reações e um "swap" são duas chamadas (remove + add). */
   react: { limit: 120, windowMs: 60_000 },
-  /** Invitation peek (public, per-IP). 30/min lets a forwarded link
-   *  retry a handful of times under flaky connectivity without
-   *  enabling brute-force token enumeration. With 256-bit tokens the
-   *  enumeration risk is theoretical; this is belt-and-braces. */
+  /** Peek de convite (público, por IP). 30/min permite retentativas sob
+   *  conectividade instável sem habilitar brute-force de tokens. */
   invitationPeek: { limit: 30, windowMs: 60_000 },
-  /** Invitation redeem (authed, per-IP+user). Tighter than peek —
-   *  successful redemption mutates two profiles and an invite row, so
-   *  the abuse surface is "spam join attempts." */
+  /** Redeem de convite (autenticado, por IP+user). Mais restrito que peek —
+   *  um redeem muta dois perfis e uma linha de convite. */
   invitationRedeem: { limit: 10, windowMs: 60_000 },
-  /** Admin-only account / member-management actions: create/revoke
-   *  invitation, rename account, change member role, remove member,
-   *  transfer ownership. 30/min per user is comfortably above any
-   *  realistic legitimate use (the Members tab is a clicks-only UI)
-   *  while still bounding accidental abuse from a script run in a
-   *  loop or a compromised admin session spamming role flips. */
+  /** Ações admin de conta/membros: criar/revogar convite, renomear conta,
+   *  alterar papel, remover membro, transferir ownership. 30/min por usuário
+   *  está acima de qualquer uso legítimo e ainda limita abuso acidental. */
   adminAction: { limit: 30, windowMs: 60_000 },
-  /** External API-key send (n8n agent replying). Bucketed per ACCOUNT,
-   *  not per user — the key authenticates an account, and an agent can
-   *  legitimately fan out several replies. 120/min is generous for a
-   *  conversational bot while still bounding a runaway n8n loop or a
-   *  leaked key blasting the WhatsApp number. */
+  /** Envio via API key externa (agente n8n respondendo). Bucket por CONTA,
+   *  não por usuário — a key autentica uma conta e um agente pode fan out
+   *  várias respostas. 120/min é generoso para bot conversacional. */
   apiSend: { limit: 120, windowMs: 60_000 },
   /** Escrita de contatos via API (upsert/patch). Por conta. */
   contactsWrite: { limit: 120, windowMs: 60_000 },
@@ -161,8 +165,8 @@ export const RATE_LIMITS = {
   broadcastSend: { limit: 10, windowMs: 60_000 },
 } as const;
 
-/** Test-only helper. Clears the in-memory state so unit tests don't
- *  leak buckets across files. Not wired up in production code. */
+/** Helper exclusivo para testes. Limpa o estado em memória para que testes
+ *  unitários não vazem buckets entre arquivos. Não usado em produção. */
 export function __resetRateLimitForTests() {
   buckets.clear();
   callsSinceSweep = 0;
