@@ -92,4 +92,38 @@ describe('dispatchMessageReceived', () => {
 
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  // Verifica os headers obrigatórios content-type e x-webhook-event no endpoint ativo
+  it('1 endpoint ativo → headers content-type e x-webhook-event enviados corretamente', async () => {
+    const secret = 'whsec_test123'
+    const admin = makeAdmin([{ id: 'ep1', url: 'https://n8n.example.com/webhook/abc', secret }])
+
+    await dispatchMessageReceived(admin, 'acc1', basePayload)
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [, init] = fetchMock.mock.calls[0]
+    expect(init.headers['content-type']).toBe('application/json')
+    expect(init.headers['x-webhook-event']).toBe('message.received')
+  })
+
+  // Resposta HTTP non-ok (500) não deve causar rejeição — comportamento best-effort
+  it('resposta HTTP non-ok (500) → dispatch resolve sem lançar', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 500 })
+    const admin = makeAdmin([{ id: 'ep1', url: 'https://n8n.example.com/webhook/fail500', secret: 's' }])
+
+    await expect(dispatchMessageReceived(admin, 'acc1', basePayload)).resolves.toBeUndefined()
+  })
+
+  // Erro no lookup do Supabase → dispatch resolve sem chamar fetch (retorna antes de enviar)
+  it('erro no lookup do Supabase → dispatch resolve e fetch NÃO é chamado', async () => {
+    // Substitui makeAdmin para retornar erro simulado do banco
+    const eqInner = vi.fn().mockResolvedValue({ data: null, error: { message: 'DB down' } })
+    const eqOuter = vi.fn().mockReturnValue({ eq: eqInner })
+    const select = vi.fn().mockReturnValue({ eq: eqOuter })
+    const from = vi.fn().mockReturnValue({ select })
+    const adminComErro = { from } as unknown as import('@supabase/supabase-js').SupabaseClient
+
+    await expect(dispatchMessageReceived(adminComErro, 'acc1', basePayload)).resolves.toBeUndefined()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
 })
