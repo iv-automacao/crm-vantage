@@ -152,7 +152,7 @@ Corpo enviado:
 
 `event_name` usado = o da `capi_settings` da conta (não o DEFAULT da linha), pra refletir mudança de config. O "reenviar" zera `attempts` (volta `status='pending'`, `attempts=0`, `last_error=null`).
 
-> **Grounding `waba_id`:** `whatsapp_config` é chaveado por `user_id` (`UNIQUE(user_id)`), não por `account_id`. Resolver pela config dona do WhatsApp da conta — o mesmo caminho que o inbound webhook usa pra resolver a conta a partir do `phone_number_id` (`configOwnerUserId`). Se ambíguo/ausente, **omitir** `whatsapp_business_account_id` (o `ctwa_clid` já basta pro match). Não bloqueia o envio.
+> **Grounding `waba_id`:** `whatsapp_config` tem `account_id NOT NULL UNIQUE` desde a migration 017 — resolução direta e não-ambígua: `SELECT waba_id FROM whatsapp_config WHERE account_id = <conta>`. Best-effort: se não houver linha ou `waba_id` for nulo, **omitir** `whatsapp_business_account_id` (o `ctwa_clid` já basta pro match). Nunca bloqueia o envio.
 
 ### Cron (`src/app/api/capi/cron/route.ts`)
 Espelha `automations/cron`: `x-cron-secret` vs `AUTOMATION_CRON_SECRET` (timing-safe), 401 se não bater. Chama `processPendingCapiEvents(supabaseAdmin())`. Retorna `{ processed, sent, skipped, failed }`. Agendado no Vercel cron (ex.: a cada 5 min). `maxDuration` adequado.
