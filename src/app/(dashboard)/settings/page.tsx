@@ -16,6 +16,7 @@ import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel'
 import { DealsSettings } from '@/components/settings/deals-settings';
 import { MembersTab } from '@/components/settings/members-tab';
 import { ApiKeysPanel } from '@/components/settings/api-keys-panel';
+import { WebhooksPanel } from '@/components/settings/webhooks-panel';
 import {
   resolveSection,
   type SettingsSection,
@@ -61,6 +62,7 @@ export default function SettingsPage() {
     deals: <DealsSettings />,
     members: <MembersTab />,
     api: <ApiKeysPanel />,
+    webhooks: <WebhooksPanel />,
   };
 
   return (
