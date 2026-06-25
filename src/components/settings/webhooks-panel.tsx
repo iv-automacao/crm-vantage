@@ -96,8 +96,9 @@ export function WebhooksPanel() {
         toast.error(payload.error || 'Falha ao carregar webhooks');
         return;
       }
-      const data = (await res.json()) as { webhooks: WebhookEndpoint[] };
-      setEndpoints(data.webhooks);
+      // A rota GET /api/account/webhooks devolve { endpoints }.
+      const data = (await res.json()) as { endpoints: WebhookEndpoint[] };
+      setEndpoints(data.endpoints ?? []);
     } catch (err) {
       console.error('[WebhooksPanel] load error:', err);
       toast.error('Não foi possível conectar ao servidor');
