@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { getCapiSettingsView, validateCapiInput, type CapiSettingsInput } from '@/lib/capi/settings'
+import { encryptCapiToken } from '@/lib/capi/crypto'
 
 export async function GET() {
   try {
@@ -43,6 +44,12 @@ export async function PUT(request: Request) {
     })
     if (!validated.ok) {
       return NextResponse.json({ error: validated.error, code: 'validation_error' }, { status: 422 })
+    }
+
+    // Cifra o token em repouso quando um token novo foi enviado. Sem token
+    // novo, o patch não toca a coluna e o valor cifrado salvo é preservado.
+    if (typeof validated.patch.access_token === 'string') {
+      validated.patch.access_token = encryptCapiToken(validated.patch.access_token)
     }
 
     const { error } = await ctx.supabase

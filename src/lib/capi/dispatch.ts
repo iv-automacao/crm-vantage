@@ -2,6 +2,7 @@
 // contato, envia a conversão pra Meta e atualiza o status. Chamado pelo cron.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { sendConversionEvent } from './client'
+import { decryptCapiToken } from './crypto'
 
 export const MAX_CAPI_ATTEMPTS = 5
 
@@ -86,7 +87,7 @@ export async function processPendingCapiEvents(
     const attempts = ((ev.attempts as number) ?? 0) + 1
     const resp = await sendConversionEvent({
       datasetId: settings.dataset_id as string,
-      accessToken: settings.access_token as string, // nunca logado
+      accessToken: decryptCapiToken(settings.access_token as string),
       eventName: (settings.event_name as string) ?? 'Purchase',
       eventId: (ev.deal_id as string) ?? id,
       eventTimeUnix: Math.floor(Date.parse(ev.created_at as string) / 1000),
