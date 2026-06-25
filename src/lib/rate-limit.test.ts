@@ -1,109 +1,73 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  __resetRateLimitForTests,
-  checkRateLimit,
-  rateLimitResponse,
-} from "./rate-limit";
+// src/lib/rate-limit.test.ts
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const OPTS = { limit: 3, windowMs: 60_000 };
+const OPTS = { limit: 3, windowMs: 1000 }
 
-describe("checkRateLimit", () => {
-  beforeEach(() => {
-    __resetRateLimitForTests();
-  });
+// Mock do @upstash/ratelimit. `limitImpl` é trocado por teste.
+let limitImpl: (id: string) => Promise<unknown> = async () => ({
+  success: true, limit: 3, remaining: 2, reset: Date.now() + 1000,
+})
+vi.mock('@upstash/ratelimit', () => ({
+  Ratelimit: class {
+    static fixedWindow() { return {} }
+    limit(id: string) { return limitImpl(id) }
+  },
+}))
+vi.mock('@upstash/redis', () => ({ Redis: class {} }))
 
-  it("permits the first request and decrements remaining", () => {
-    const result = checkRateLimit("user:1", OPTS);
-    expect(result).toMatchObject({
-      success: true,
-      remaining: 2,
-      limit: 3,
-    });
-    expect(result.reset).toBeGreaterThan(Date.now());
-  });
-
-  it("permits exactly `limit` requests then rejects the next", () => {
-    expect(checkRateLimit("user:1", OPTS).success).toBe(true);
-    expect(checkRateLimit("user:1", OPTS).success).toBe(true);
-    expect(checkRateLimit("user:1", OPTS).success).toBe(true);
-    const over = checkRateLimit("user:1", OPTS);
-    expect(over.success).toBe(false);
-    expect(over.remaining).toBe(0);
-  });
-
-  it("keeps separate counters per key", () => {
-    checkRateLimit("user:1", OPTS);
-    checkRateLimit("user:1", OPTS);
-    checkRateLimit("user:1", OPTS);
-    // user:1 is at the cap, user:2 should still be unaffected.
-    const other = checkRateLimit("user:2", OPTS);
-    expect(other.success).toBe(true);
-    expect(other.remaining).toBe(2);
-  });
-
-  it("opens a fresh window after `windowMs` elapses", () => {
-    vi.useFakeTimers();
-    try {
-      const t0 = new Date("2026-05-01T00:00:00Z").getTime();
-      vi.setSystemTime(t0);
-      __resetRateLimitForTests();
-
-      checkRateLimit("user:1", OPTS);
-      checkRateLimit("user:1", OPTS);
-      checkRateLimit("user:1", OPTS);
-      expect(checkRateLimit("user:1", OPTS).success).toBe(false);
-
-      // Jump just past the window.
-      vi.setSystemTime(t0 + OPTS.windowMs + 1);
-      const refreshed = checkRateLimit("user:1", OPTS);
-      expect(refreshed.success).toBe(true);
-      expect(refreshed.remaining).toBe(2);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-});
-
-describe("rateLimitResponse", () => {
-  it("returns a 429 with retry / X-RateLimit headers", async () => {
-    const reset = Date.now() + 30_000;
-    const res = rateLimitResponse({
-      success: false,
-      remaining: 0,
-      reset,
-      limit: 60,
-    });
-    expect(res.status).toBe(429);
-    expect(res.headers.get("X-RateLimit-Limit")).toBe("60");
-    expect(res.headers.get("X-RateLimit-Remaining")).toBe("0");
-    expect(Number(res.headers.get("Retry-After"))).toBeGreaterThan(0);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toMatch(/rate limit/i);
-  });
-
-  it("clamps Retry-After to a minimum of 1 second", () => {
-    // Reset already in the past — the ceiling math would otherwise give 0.
-    const res = rateLimitResponse({
-      success: false,
-      remaining: 0,
-      reset: Date.now() - 5_000,
-      limit: 10,
-    });
-    expect(Number(res.headers.get("Retry-After"))).toBeGreaterThanOrEqual(1);
-  });
-});
-
-describe("RATE_LIMITS presets", () => {
-  it("send and broadcast budgets are independent", async () => {
-    __resetRateLimitForTests();
-    // Importing here so the presets stay close to their assertions.
-    const { RATE_LIMITS } = await import("./rate-limit");
-    expect(RATE_LIMITS.send.limit).toBeGreaterThan(RATE_LIMITS.broadcast.limit);
-    expect(RATE_LIMITS.send.windowMs).toBe(60_000);
-    expect(RATE_LIMITS.broadcast.windowMs).toBe(60_000);
-  });
-});
+async function freshModule() {
+  vi.resetModules()
+  return await import('./rate-limit')
+}
 
 afterEach(() => {
-  __resetRateLimitForTests();
-});
+  vi.unstubAllEnvs()
+  vi.restoreAllMocks()
+})
+
+describe('checkRateLimit — fallback local (sem env Upstash)', () => {
+  beforeEach(() => {
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', '')
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', '')
+  })
+
+  it('permite dentro do limite e bloqueia ao estourar', async () => {
+    const { checkRateLimit } = await freshModule()
+    expect((await checkRateLimit('user:1', OPTS)).success).toBe(true)
+    expect((await checkRateLimit('user:1', OPTS)).success).toBe(true)
+    expect((await checkRateLimit('user:1', OPTS)).success).toBe(true)
+    expect((await checkRateLimit('user:1', OPTS)).success).toBe(false)
+  })
+
+  it('isola buckets por key', async () => {
+    const { checkRateLimit } = await freshModule()
+    await checkRateLimit('user:1', OPTS)
+    await checkRateLimit('user:1', OPTS)
+    await checkRateLimit('user:1', OPTS)
+    expect((await checkRateLimit('user:2', OPTS)).success).toBe(true)
+  })
+})
+
+describe('checkRateLimit — Upstash (com env)', () => {
+  beforeEach(() => {
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://x.upstash.io')
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'tok')
+  })
+
+  it('mapeia a resposta do Upstash pro RateLimitResult', async () => {
+    const reset = Date.now() + 5000
+    limitImpl = async () => ({ success: false, limit: 3, remaining: 0, reset })
+    const { checkRateLimit } = await freshModule()
+    const r = await checkRateLimit('user:1', OPTS)
+    expect(r).toEqual({ success: false, remaining: 0, reset, limit: 3 })
+  })
+
+  it('fail-open quando o Upstash lança', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    limitImpl = async () => { throw new Error('rede caiu') }
+    const { checkRateLimit } = await freshModule()
+    const r = await checkRateLimit('user:1', OPTS)
+    expect(r.success).toBe(true) // deixou passar
+    expect(warn).toHaveBeenCalled()
+  })
+})

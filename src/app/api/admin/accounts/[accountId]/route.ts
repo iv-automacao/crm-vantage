@@ -35,7 +35,7 @@ export async function DELETE(
     const admin = await requirePlatformAdmin();
 
     // Rate limit por admin — operação destrutiva.
-    const limit = checkRateLimit(
+    const limit = await checkRateLimit(
       `adminAction:${admin.userId}`,
       RATE_LIMITS.adminAction,
     );
