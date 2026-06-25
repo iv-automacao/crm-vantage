@@ -8,10 +8,11 @@ import {
 
 describe("formatCurrency", () => {
   it("formats whole amounts with no minor units", () => {
-    // Use a non-breaking-space-tolerant check: Intl may insert NBSP.
+    // Independente de locale/ICU: formatCurrency pina pt-BR ("1.234"), mas o
+    // separador varia conforme o build do ICU. Checamos só os dígitos — e que
+    // são exatamente "1234" (sem minor units, senão viria "123400").
     const out = formatCurrency(1234, "USD");
-    expect(out).toContain("1,234");
-    expect(out).not.toContain(".00");
+    expect(out.replace(/\D/g, "")).toBe("1234");
   });
 
   it("defaults to USD when no currency is given", () => {
@@ -30,7 +31,7 @@ describe("formatCurrency", () => {
     // Intl is lenient here — it uses the code as the symbol.
     const out = formatCurrency(1234, "ZZZ");
     expect(out).toContain("ZZZ");
-    expect(out).toContain("1,234");
+    expect(out.replace(/\D/g, "")).toContain("1234"); // dígitos, independente de separador
   });
 
   it("never throws on a structurally invalid code (no DB CHECK on deals.currency)", () => {
