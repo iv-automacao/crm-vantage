@@ -6,6 +6,7 @@ import {
   Palette,
   PlugZap,
   Shield,
+  Shuffle,
   Tags,
   Target,
   User,
@@ -35,6 +36,7 @@ export const SETTINGS_SECTIONS = [
   'api',
   'webhooks',
   'capi',
+  'leads',
 ] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
@@ -62,6 +64,7 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   api: { id: 'api', label: 'API / Integrações', icon: KeyRound, group: 'workspace' },
   webhooks: { id: 'webhooks', label: 'Webhooks', icon: Webhook, group: 'workspace' },
   capi: { id: 'capi', label: 'CAPI / Meta', icon: Target, group: 'workspace' },
+  leads: { id: 'leads', label: 'Distribuição de leads', icon: Shuffle, group: 'workspace' },
 };
 
 export const RAIL_GROUPS: { label: string | null; group: SectionMeta['group'] }[] = [

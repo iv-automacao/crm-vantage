@@ -18,6 +18,7 @@ import { MembersTab } from '@/components/settings/members-tab';
 import { ApiKeysPanel } from '@/components/settings/api-keys-panel';
 import { WebhooksPanel } from '@/components/settings/webhooks-panel';
 import { CapiPanel } from '@/components/settings/capi-panel';
+import { LeadAutoassignPanel } from '@/components/settings/lead-autoassign-panel';
 import {
   resolveSection,
   type SettingsSection,
@@ -65,6 +66,7 @@ export default function SettingsPage() {
     api: <ApiKeysPanel />,
     webhooks: <WebhooksPanel />,
     capi: <CapiPanel />,
+    leads: <LeadAutoassignPanel />,
   };
 
   return (
