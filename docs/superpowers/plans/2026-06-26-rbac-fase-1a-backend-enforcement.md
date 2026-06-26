@@ -67,7 +67,9 @@ const STRONG_ROLE_MARKERS = [
 ]
 // Rotas mutantes que legitimamente NÃO usam papel (preencher com motivo).
 const MUTATING_EXCEPTIONS = new Map<string, string>([
-  // ex: ['whatsapp/webhook/route.ts', 'pública, validada por assinatura'],
+  // Convidado ainda NÃO tem papel na conta-alvo ao redimir; a autorização
+  // vive no RPC redeem_invitation (SECURITY DEFINER, migration 019).
+  ['invitations/[token]/redeem/route.ts', 'autz no RPC redeem_invitation; convidado sem papel ainda'],
 ])
 const MUTATING_RE = /export\s+(async\s+function|const)\s+(POST|PATCH|PUT|DELETE)\b/
 
@@ -98,7 +100,7 @@ it('toda rota MUTANTE tem guard de papel forte (não só auth.getUser)', () => {
 - [ ] **Step 2: Rodar e confirmar que FALHA listando as rotas-alvo (RED)**
 
 Run: `npx vitest run src/app/api/route-auth-guard.test.ts`
-Expected: FAIL. A mensagem lista os offenders — devem aparecer pelo menos: `whatsapp/config/route.ts`, `whatsapp/broadcast/route.ts`, `whatsapp/send/route.ts`, `whatsapp/react/route.ts`, `whatsapp/templates/submit/route.ts`, `whatsapp/templates/[id]/route.ts`, `whatsapp/templates/sync/route.ts`, `automations/route.ts`, `automations/[id]/route.ts`, `automations/[id]/duplicate/route.ts`, `flows/route.ts`, `flows/[id]/route.ts`, `flows/[id]/activate/route.ts`, `account/presence/route.ts`. Anotar a lista completa — é o escopo das tasks 2-5. Qualquer offender inesperado que seja legítimo (mutação sem papel por design) vai pro `MUTATING_EXCEPTIONS` com motivo, NÃO ignorado.
+Expected: FAIL. A mensagem lista os offenders — devem aparecer: `whatsapp/config/route.ts`, `whatsapp/broadcast/route.ts`, `whatsapp/send/route.ts`, `whatsapp/react/route.ts`, `whatsapp/templates/submit/route.ts`, `whatsapp/templates/[id]/route.ts`, `whatsapp/templates/sync/route.ts`, `automations/route.ts`, `automations/[id]/route.ts`, `automations/[id]/duplicate/route.ts`, `automations/engine/route.ts`, `flows/route.ts`, `flows/[id]/route.ts`, `flows/[id]/activate/route.ts`, `account/presence/route.ts` (15 rotas). `invitations/[token]/redeem/route.ts` NÃO deve aparecer (está no `MUTATING_EXCEPTIONS`). Anotar a lista completa — é o escopo das tasks 2-5. Qualquer offender inesperado que seja legítimo (mutação sem papel por design) vai pro `MUTATING_EXCEPTIONS` com motivo, NÃO ignorado.
 
 - [ ] **Step 3: Commit**
 
@@ -201,28 +203,31 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - Modify: `src/app/api/flows/route.ts` (POST `:47`)
 - Modify: `src/app/api/flows/[id]/route.ts` (PUT `:89`, DELETE `:178`)
 - Modify: `src/app/api/flows/[id]/activate/route.ts` (POST `:20`)
+- Modify: `src/app/api/automations/engine/route.ts` (POST `:11` → admin)
 
 **Interfaces:**
 - Consumes: `requireRole`, `toErrorResponse`.
 - Produces: rotas guardadas. **Regra inviolável: o guard SOMA, não substitui.**
 
+> **`automations/engine/route.ts`** (descoberto no RED da Task 1): POST que dispara a engine de automações da conta ("trigger manual pra testes/integrações externas"). Hoje usa `requireActiveAccount()` (`:14`, qualquer membro ativo). Disparar a engine não é operação de colaborador — trocar por `const ctx = await requireRole('admin')` e usar `ctx.accountId`. Mesmo padrão dos outros; sem ownership por-recurso aqui.
+
 - [ ] **Step 1: Inserir `requireRole('admin')` como primeira instrução de cada handler MUTANTE**
 
 Para cada método mutante listado, adicionar `await requireRole('admin')` (dentro de `try { ... } catch (err) { return toErrorResponse(err) }`) **ANTES** de qualquer lógica existente, e **MANTER intactos** os helpers e checagens de ownership atuais (`requireUser` local em `automations/[id]/route.ts:14` e `flows/route.ts:16`; `requireOwnership` em `flows/[id]/route.ts:20`; os `.eq('user_id', user.id)` e a comparação `existing.user_id !== user.id`). Os writes continuam via `supabaseAdmin()` — **não trocar o client**. O GET de cada arquivo NÃO muda.
-- `automations/route.ts` POST (`:29`), `automations/[id]/route.ts` PATCH (`:45`)/DELETE (`:123`), `automations/[id]/duplicate/route.ts` POST (`:5`), `flows/route.ts` POST (`:47`), `flows/[id]/route.ts` PUT (`:89`)/DELETE (`:178`), `flows/[id]/activate/route.ts` POST (`:20`).
-- Onde o handler hoje faz `auth.getUser()` inline puro (`automations/route.ts`, `duplicate`, `activate`), o `requireRole('admin')` pode substituir o `auth.getUser()` (ambos resolvem o user) — mas a checagem de ownership por `user_id`/RLS que vem depois permanece.
+- `automations/route.ts` POST (`:29`), `automations/[id]/route.ts` PATCH (`:45`)/DELETE (`:123`), `automations/[id]/duplicate/route.ts` POST (`:5`), `automations/engine/route.ts` POST (`:11`), `flows/route.ts` POST (`:47`), `flows/[id]/route.ts` PUT (`:89`)/DELETE (`:178`), `flows/[id]/activate/route.ts` POST (`:20`).
+- Onde o handler hoje faz `auth.getUser()` inline puro (`automations/route.ts`, `duplicate`, `activate`), o `requireRole('admin')` pode substituir o `auth.getUser()` (ambos resolvem o user) — mas a checagem de ownership por `user_id`/RLS que vem depois permanece. `automations/engine/route.ts` hoje usa `requireActiveAccount()` — trocar por `requireRole('admin')` (sem ownership por-recurso ali).
 
 - [ ] **Step 2: typecheck + guardrail**
 
 Run: `npm run typecheck`
 Expected: sem erros.
 Run: `npx vitest run src/app/api/route-auth-guard.test.ts`
-Expected: os 6 arquivos de automations/flows saem dos offenders. Sobra só `account/presence/route.ts` (Task 5).
+Expected: os 7 arquivos de automations/flows (incl. `automations/engine/route.ts`) saem dos offenders. Sobra só `account/presence/route.ts` (Task 5).
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add src/app/api/automations/route.ts "src/app/api/automations/[id]/route.ts" "src/app/api/automations/[id]/duplicate/route.ts" src/app/api/flows/route.ts "src/app/api/flows/[id]/route.ts" "src/app/api/flows/[id]/activate/route.ts"
+git add src/app/api/automations/route.ts "src/app/api/automations/[id]/route.ts" "src/app/api/automations/[id]/duplicate/route.ts" src/app/api/automations/engine/route.ts src/app/api/flows/route.ts "src/app/api/flows/[id]/route.ts" "src/app/api/flows/[id]/activate/route.ts"
 git commit -m "feat(rbac): automations e flows exigem admin (guard somado ao ownership, sem IDOR)
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"

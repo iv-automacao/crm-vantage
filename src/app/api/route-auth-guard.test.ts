@@ -83,6 +83,7 @@ describe('guardrail de auth das rotas de API', () => {
   // Rotas mutantes que legitimamente NÃO usam papel (preencher com motivo).
   const MUTATING_EXCEPTIONS = new Map<string, string>([
     // ex: ['whatsapp/webhook/route.ts', 'pública, validada por assinatura'],
+    ['invitations/[token]/redeem/route.ts', 'autz no RPC redeem_invitation; convidado sem papel ainda'],
   ])
   const MUTATING_RE = /export\s+(async\s+function|const)\s+(POST|PATCH|PUT|DELETE)\b/
 
