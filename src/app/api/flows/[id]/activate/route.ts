@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { validateFlowForActivation } from '@/lib/flows/validate'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 
 /**
  * POST /api/flows/[id]/activate
@@ -21,15 +22,14 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await context.params
-
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  let supabase: SupabaseClient
+  try {
+    const ctx = await requireRole('admin')
+    supabase = ctx.supabase
+  } catch (err) {
+    return toErrorResponse(err)
   }
+  const { id } = await context.params
 
   const body = (await request.json().catch(() => null)) as
     | { status?: 'draft' | 'active' | 'archived' }

@@ -7,6 +7,7 @@ import {
   validateStepsForActivation,
   validateTriggerForActivation,
 } from '@/lib/automations/validate'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 
 export async function GET() {
   const supabase = await createClient()
@@ -27,26 +28,14 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  // Resolve the caller's account_id — `automations.account_id` is NOT
-  // NULL post-017, so an INSERT without it trips the not-null constraint
-  // even though the admin client bypasses RLS.
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('account_id')
-    .eq('user_id', user.id)
-    .single()
-  const accountId = profile?.account_id as string | undefined
-  if (!accountId) {
-    return NextResponse.json(
-      { error: 'Your profile is not linked to an account.' },
-      { status: 403 },
-    )
+  let userId: string
+  let accountId: string
+  try {
+    const ctx = await requireRole('admin')
+    userId = ctx.userId
+    accountId = ctx.accountId
+  } catch (err) {
+    return toErrorResponse(err)
   }
 
   const body = await request.json().catch(() => null)
@@ -101,7 +90,7 @@ export async function POST(request: Request) {
   const { data: automation, error: insertErr } = await admin
     .from('automations')
     .insert({
-      user_id: user.id,
+      user_id: userId,
       account_id: accountId,
       name: effectiveName,
       description: effectiveDescription ?? null,

@@ -10,6 +10,7 @@ import {
   validateStepsForActivation,
   validateTriggerForActivation,
 } from '@/lib/automations/validate'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 
 async function requireUser() {
   const supabase = await createClient()
@@ -46,6 +47,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  try { await requireRole('admin') } catch (err) { return toErrorResponse(err) }
   const { id } = await params
   const user = await requireUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -124,6 +126,7 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  try { await requireRole('admin') } catch (err) { return toErrorResponse(err) }
   const { id } = await params
   const user = await requireUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
