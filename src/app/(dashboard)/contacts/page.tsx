@@ -395,7 +395,7 @@ export default function ContactsPage() {
                     <p className="text-sm text-muted-foreground">
                       {search ? 'Nenhum contato corresponde à sua busca.' : 'Nenhum contato ainda.'}
                     </p>
-                    {!search && (
+                    {!search && canEdit && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -486,6 +486,7 @@ export default function ContactsPage() {
                         className="bg-popover border-border"
                       >
                         <DropdownMenuItem
+                          disabled={!canEdit}
                           onClick={(e) => {
                             e.stopPropagation();
                             openEditForm(contact);

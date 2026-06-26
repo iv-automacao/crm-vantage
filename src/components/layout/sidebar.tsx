@@ -254,7 +254,9 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             })}
           </ul>
 
-          <div className="my-4 border-t border-border" />
+          {visibleNavItems(bottomNavItems, accountRole).length > 0 && (
+            <div className="my-4 border-t border-border" />
+          )}
 
           <ul className="flex flex-col gap-1">
             {visibleNavItems(bottomNavItems, accountRole).map((item) => {

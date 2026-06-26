@@ -23,7 +23,7 @@ const steps = [
 
 export default function NewBroadcastPage() {
   const router = useRouter();
-  const { accountId } = useAuth();
+  const { accountId, profileLoading } = useAuth();
   const canEditSettings = useCan('edit-settings');
   const { createAndSendBroadcast, isProcessing, progress } = useBroadcastSending();
 
@@ -126,6 +126,10 @@ export default function NewBroadcastPage() {
     toast.success('Rascunho salvo');
     router.push('/broadcasts');
   }
+
+  // Aguarda o perfil carregar antes de decidir — evita o flash de "Acesso
+  // restrito" pro admin durante o intervalo em que useCan é fail-closed.
+  if (profileLoading) return null;
 
   // Defesa para acesso direto via URL por usuários sem permissão de admin+
   if (!canEditSettings) {

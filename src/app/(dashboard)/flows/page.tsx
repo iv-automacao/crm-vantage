@@ -407,14 +407,12 @@ function FlowCard({
         </span>
       </div>
 
-      <div className="mt-4 flex items-center justify-end gap-2 border-t border-border pt-3">
-        {canManage && (
+      {canManage && (
+        <div className="mt-4 flex items-center justify-end gap-2 border-t border-border pt-3">
           <Button variant="ghost" size="sm" onClick={onEdit}>
             <Pencil className="h-3.5 w-3.5" />
             Editar
           </Button>
-        )}
-        {canManage && (
           <Button
             variant="ghost"
             size="sm"
@@ -424,8 +422,8 @@ function FlowCard({
             <Trash2 className="h-3.5 w-3.5" />
             Excluir
           </Button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

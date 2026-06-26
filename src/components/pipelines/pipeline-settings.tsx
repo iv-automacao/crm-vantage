@@ -18,6 +18,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { createClient } from "@/lib/supabase/client";
 import { useCan } from "@/hooks/use-can";
+import { GatedButton } from "@/components/ui/gated-button";
 import type { Pipeline, PipelineStage } from "@/types";
 import {
   Dialog,
@@ -361,13 +362,15 @@ export function PipelineSettings({
               >
                 Cancelar
               </Button>
-              <Button
+              <GatedButton
+                canAct={canEditSettings}
+                gateReason="Apenas administradores editam funis"
                 onClick={handleSave}
-                disabled={saving || !name.trim() || !canEditSettings}
+                disabled={saving || !name.trim()}
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {saving ? "Salvando..." : "Salvar alterações"}
-              </Button>
+              </GatedButton>
             </DialogFooter>
           </>
         )}
