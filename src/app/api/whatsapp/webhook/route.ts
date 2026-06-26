@@ -9,6 +9,7 @@ import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { buildMessageReceivedPayload, dispatchMessageReceived } from '@/lib/webhooks/dispatch'
 import { captureCtwaReferral } from '@/lib/capi/referral'
+import { assignNextAgent } from '@/lib/leads/round-robin'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -669,6 +670,32 @@ async function processMessage(
   // so the broadcast's `replied_count` advances (via the aggregate
   // trigger installed in migration 003).
   await flagBroadcastReplyIfAny(accountId, contactRecord.id)
+
+  // Distribuição automática de leads: só pra conversa SEM dono e quando o
+  // toggle da conta está ligado. Roda antes do dispatch de automações pra que
+  // um passo `assign_conversation` do usuário veja a conversa já atribuída
+  // (o guard `.is('assigned_agent_id', null)` torna esse passo um no-op).
+  // Gate em `!conversation.assigned_agent_id` é essencial: a RPC avança o
+  // cursor do rodízio, então NÃO pode rodar em conversa já atribuída.
+  if (!conversation.assigned_agent_id) {
+    const { data: autoassign } = await supabaseAdmin()
+      .from('lead_autoassign_settings')
+      .select('is_active')
+      .eq('account_id', accountId)
+      .maybeSingle()
+    if (autoassign?.is_active) {
+      const { agentId } = await assignNextAgent(supabaseAdmin(), accountId, contactRecord.id)
+      if (!agentId) {
+        // Ninguém disponível → marca como aguardando (sinal pro ADM). O cron
+        // atribui o lead mais antigo assim que alguém ficar disponível.
+        await supabaseAdmin()
+          .from('conversations')
+          .update({ autoassign_waiting: true })
+          .eq('id', conversation.id)
+          .is('assigned_agent_id', null)
+      }
+    }
+  }
 
   // ============================================================
   // Flow runner dispatch.
