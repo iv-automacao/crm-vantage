@@ -47,6 +47,13 @@ export async function assignNextAgent(
   accountId: string,
   contactId: string,
 ): Promise<{ agentId: string | null }> {
+  // Drift conhecido (aceitável no escopo enxuto): a RPC avança o cursor e o
+  // UPDATE abaixo são duas instruções. Se o MESMO contato novo manda duas
+  // mensagens em lambdas concorrentes, ambas passam o gate de `null`, a RPC
+  // roda duas vezes (cursor +2, escolhe X e Y) mas só o primeiro UPDATE vence
+  // o guard `.is(null)` — o lead fica com UM dono (sem duplo-assign), porém Y
+  // é pulado no rodízio. Auto-corrige ao longo do tempo. Pra fairness estrita,
+  // mover o UPDATE pra dentro da RPC e só avançar o cursor quando afetar linha.
   const { data: agentId, error } = await db.rpc('pick_next_agent_round_robin', {
     p_account_id: accountId,
   })

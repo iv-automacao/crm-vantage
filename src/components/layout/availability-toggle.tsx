@@ -46,23 +46,40 @@ function AvailabilityToggleInner({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Heartbeat: registra atividade a cada 4min e ao voltar para a aba.
+  // Heartbeat: registra atividade enquanto a aba está VISÍVEL e em primeiro
+  // plano. Quando a aba fica oculta (trocou de aba, minimizou, saiu), o
+  // intervalo é pausado — então o ping para e, 15min depois, o backend tira
+  // o vendedor do rodízio. É o "logado mas fechado": não basta ter sessão,
+  // tem que estar de fato na tela. Religa ao voltar.
   useEffect(() => {
     const ping = () =>
       fetch('/api/account/presence', { method: 'POST' }).catch(() => {})
 
-    // Ping imediato ao montar — registra sessão ativa.
-    ping()
+    let interval: ReturnType<typeof setInterval> | null = null
+
+    const start = () => {
+      if (interval) return
+      ping() // ping imediato ao (re)tornar visível
+      interval = setInterval(ping, 4 * 60_000)
+    }
+    const stop = () => {
+      if (interval) {
+        clearInterval(interval)
+        interval = null
+      }
+    }
 
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') ping()
+      if (document.visibilityState === 'visible') start()
+      else stop()
     }
     document.addEventListener('visibilitychange', onVisibility)
 
-    const interval = setInterval(ping, 4 * 60_000)
+    // Só inicia se a aba já está visível no mount.
+    if (document.visibilityState === 'visible') start()
 
     return () => {
-      clearInterval(interval)
+      stop()
       document.removeEventListener('visibilitychange', onVisibility)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
