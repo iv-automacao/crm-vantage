@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import { sendReactionMessage } from '@/lib/whatsapp/meta-api';
 import { decrypt } from '@/lib/whatsapp/encryption';
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
@@ -20,35 +20,12 @@ import {
  */
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
+    const ctx = await requireRole('agent');
+    const { supabase, accountId } = ctx;
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const limit = await checkRateLimit(`react:${user.id}`, RATE_LIMITS.react);
+    const limit = await checkRateLimit(`react:${ctx.userId}`, RATE_LIMITS.react);
     if (!limit.success) {
       return rateLimitResponse(limit);
-    }
-
-    // Resolve the caller's account_id so conversation + whatsapp_config
-    // lookups work for teammates who didn't author the rows directly.
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('account_id')
-      .eq('user_id', user.id)
-      .maybeSingle();
-    const accountId = profile?.account_id as string | undefined;
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      );
     }
 
     const body = await request.json();
@@ -150,7 +127,7 @@ export async function POST(request: Request) {
         .delete()
         .eq('message_id', targetMessage.id)
         .eq('actor_type', 'agent')
-        .eq('actor_id', user.id);
+        .eq('actor_id', ctx.userId);
 
       if (delError) {
         console.error('[whatsapp/react] DB delete failed:', delError.message);
@@ -167,7 +144,7 @@ export async function POST(request: Request) {
           message_id: targetMessage.id,
           conversation_id: targetMessage.conversation_id,
           actor_type: 'agent',
-          actor_id: user.id,
+          actor_id: ctx.userId,
           emoji,
         },
         { onConflict: 'message_id,actor_type,actor_id' },
@@ -185,9 +162,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error in WhatsApp react POST:', error);
-    return NextResponse.json(
-      { error: 'Failed to react to message' },
-      { status: 500 },
-    );
+    return toErrorResponse(error);
   }
 }

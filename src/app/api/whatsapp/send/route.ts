@@ -1,42 +1,18 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { sendMessageToConversation } from '@/lib/whatsapp/send-message'
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
+    const ctx = await requireRole('agent')
+    const { supabase, accountId } = ctx
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Per-user rate limit. Bucket key is scoped to this route so
-    // `/broadcast` has an independent budget.
-    const limit = await checkRateLimit(`send:${user.id}`, RATE_LIMITS.send)
+    // Per-user rate limit. Bucket key é scoped a esta rota para que
+    // `/broadcast` tenha budget independente.
+    const limit = await checkRateLimit(`send:${ctx.userId}`, RATE_LIMITS.send)
     if (!limit.success) {
       return rateLimitResponse(limit)
-    }
-
-    // Resolve the caller's account_id. Every downstream lookup is
-    // account-scoped, so the previous `user_id` filters returned
-    // nothing for teammates who didn't author the row.
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('account_id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-    const accountId = profile?.account_id as string | undefined
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      )
     }
 
     // Parse defensivo: JSON malformado vira 400, não 500.
@@ -74,6 +50,6 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     console.error('Error in WhatsApp send POST:', error)
-    return NextResponse.json({ error: 'Failed to send message' }, { status: 500 })
+    return toErrorResponse(error)
   }
 }
