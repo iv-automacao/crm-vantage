@@ -58,7 +58,7 @@ function RateCell({
 
 export default function BroadcastsPage() {
   const router = useRouter();
-  const canCreate = useCan('send-messages');
+  const canCreate = useCan('edit-settings');
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -186,7 +186,7 @@ export default function BroadcastsPage() {
         </div>
         <GatedButton
           canAct={canCreate}
-          gateReason="criar disparos"
+          gateReason="disparar campanhas"
           onClick={() => router.push('/broadcasts/new')}
           className="bg-primary text-primary-foreground hover:bg-primary/90"
         >
@@ -204,7 +204,7 @@ export default function BroadcastsPage() {
           </p>
           <GatedButton
             canAct={canCreate}
-            gateReason="criar disparos"
+            gateReason="disparar campanhas"
             onClick={() => router.push('/broadcasts/new')}
             className="mt-4 bg-primary text-primary-foreground hover:bg-primary/90"
           >

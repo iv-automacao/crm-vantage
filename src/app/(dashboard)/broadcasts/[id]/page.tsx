@@ -38,6 +38,8 @@ import {
   getBroadcastStatus,
   getRecipientStatus,
 } from '@/lib/broadcast-status';
+import { useCan } from '@/hooks/use-can';
+import { GatedButton } from '@/components/ui/gated-button';
 
 interface StatCardProps {
   label: string;
@@ -145,6 +147,7 @@ export default function BroadcastDetailPage() {
   const params = useParams();
   const router = useRouter();
   const broadcastId = params.id as string;
+  const canEditSettings = useCan('edit-settings');
 
   const [broadcast, setBroadcast] = useState<Broadcast | null>(null);
   const [recipients, setRecipients] = useState<BroadcastRecipient[]>([]);
@@ -329,7 +332,9 @@ export default function BroadcastDetailPage() {
             </Button>
           </div>
         ) : (
-          <Button
+          <GatedButton
+            canAct={canEditSettings}
+            gateReason="excluir disparos"
             variant="outline"
             size="sm"
             disabled={broadcast.status === 'sending'}
@@ -343,7 +348,7 @@ export default function BroadcastDetailPage() {
           >
             <Trash2 className="h-3.5 w-3.5" />
             Excluir
-          </Button>
+          </GatedButton>
         )}
       </div>
 

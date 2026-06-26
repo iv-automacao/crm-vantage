@@ -15,6 +15,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { ArrowLeft, Send, Loader2, Users, Save } from 'lucide-react';
+import { GatedButton } from '@/components/ui/gated-button';
 
 interface AudienceConfig {
   type: string;
@@ -32,6 +33,8 @@ interface Step4Props {
   onBack: () => void;
   isProcessing: boolean;
   progress: number;
+  /** Quando false, desabilita os botões de envio e rascunho (admin+). */
+  canAct?: boolean;
 }
 
 export function Step4ScheduleSend({
@@ -44,6 +47,7 @@ export function Step4ScheduleSend({
   onBack,
   isProcessing,
   progress,
+  canAct = true,
 }: Step4Props) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [estimatedReach, setEstimatedReach] = useState<number>(0);
@@ -174,7 +178,9 @@ export function Step4ScheduleSend({
 
         <div className="flex items-center gap-2">
           {onSaveDraft && (
-            <Button
+            <GatedButton
+              canAct={canAct}
+              gateReason="criar disparos"
               variant="outline"
               onClick={onSaveDraft}
               disabled={!name.trim() || isProcessing}
@@ -182,13 +188,15 @@ export function Step4ScheduleSend({
             >
               <Save className="h-4 w-4" />
               Salvar como rascunho
-            </Button>
+            </GatedButton>
           )}
 
           <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
           <DialogTrigger
             render={
-              <Button
+              <GatedButton
+                canAct={canAct}
+                gateReason="criar disparos"
                 disabled={!name.trim() || isProcessing}
                 className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               />

@@ -11,6 +11,7 @@ import { Step2SelectAudience } from '@/components/broadcasts/step2-select-audien
 import { Step3Personalize } from '@/components/broadcasts/step3-personalize';
 import { Step4ScheduleSend } from '@/components/broadcasts/step4-schedule-send';
 import { useBroadcastSending } from '@/hooks/use-broadcast-sending';
+import { useCan } from '@/hooks/use-can';
 import { Check } from 'lucide-react';
 
 const steps = [
@@ -23,6 +24,7 @@ const steps = [
 export default function NewBroadcastPage() {
   const router = useRouter();
   const { accountId } = useAuth();
+  const canEditSettings = useCan('edit-settings');
   const { createAndSendBroadcast, isProcessing, progress } = useBroadcastSending();
 
   const [currentStep, setCurrentStep] = useState(0);
@@ -125,6 +127,18 @@ export default function NewBroadcastPage() {
     router.push('/broadcasts');
   }
 
+  // Defesa para acesso direto via URL por usuários sem permissão de admin+
+  if (!canEditSettings) {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center gap-2 rounded-xl border border-border bg-card">
+        <p className="text-sm font-medium text-foreground">Acesso restrito</p>
+        <p className="text-xs text-muted-foreground">
+          Apenas administradores podem criar disparos.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-8">
       {/* Header */}
@@ -220,6 +234,7 @@ export default function NewBroadcastPage() {
               onBack={() => setCurrentStep(2)}
               isProcessing={isProcessing}
               progress={progress}
+              canAct={canEditSettings}
             />
           )}
         </div>
