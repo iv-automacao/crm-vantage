@@ -33,6 +33,7 @@ import {
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { GatedButton } from "@/components/ui/gated-button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
@@ -51,6 +52,7 @@ import type {
   MessageTemplate,
   Tag as TagRecord,
 } from "@/types"
+import { useCan } from "@/hooks/use-can"
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 
@@ -465,6 +467,7 @@ function SendTemplateFields({
 export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
   const router = useRouter()
   const isEditing = !!initial.id
+  const canManage = useCan("edit-settings")
   const [state, setState] = useState<BuilderInitial>(initial)
   const [saving, setSaving] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -575,14 +578,16 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
             aria-label="Ativa"
           />
         </div>
-        <Button
-          onClick={save}
+        <GatedButton
+          canAct={canManage}
+          gateReason="Apenas administradores gerenciam automações"
+          onClick={() => void save()}
           disabled={saving}
           className="bg-primary text-primary-foreground hover:bg-primary/90"
         >
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           {isEditing ? "Salvar" : "Salvar rascunho"}
-        </Button>
+        </GatedButton>
       </header>
 
       {/* Canvas */}
