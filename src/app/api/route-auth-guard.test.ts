@@ -71,4 +71,35 @@ describe('guardrail de auth das rotas de API', () => {
       expect(relSet.has(pub), `Allowlist aponta para rota inexistente: ${pub}`).toBe(true)
     }
   })
+
+  // Markers que provam decisão de PAPEL/identidade (não só "tem sessão").
+  const STRONG_ROLE_MARKERS = [
+    'requireRole',
+    'defineRoute',          // carrega minRole/scope/platformAdmin no AuthSpec
+    'resolveApiKey',
+    'requirePlatformAdmin',
+    'AUTOMATION_CRON_SECRET',
+  ]
+  // Rotas mutantes que legitimamente NÃO usam papel (preencher com motivo).
+  const MUTATING_EXCEPTIONS = new Map<string, string>([
+    // ex: ['whatsapp/webhook/route.ts', 'pública, validada por assinatura'],
+  ])
+  const MUTATING_RE = /export\s+(async\s+function|const)\s+(POST|PATCH|PUT|DELETE)\b/
+
+  function isMutating(src: string): boolean {
+    return MUTATING_RE.test(src)
+  }
+
+  it('toda rota MUTANTE tem guard de papel forte (não só auth.getUser)', () => {
+    const offenders: string[] = []
+    for (const file of findRouteFiles(API_DIR)) {
+      const rel = relative(API_DIR, file).split('\\').join('/')
+      if (PUBLIC_ROUTES.has(rel) || MUTATING_EXCEPTIONS.has(rel)) continue
+      const src = readFileSync(file, 'utf8')
+      if (!isMutating(src)) continue
+      const hasStrong = STRONG_ROLE_MARKERS.some((m) => src.includes(m))
+      if (!hasStrong) offenders.push(rel)
+    }
+    expect(offenders, `rotas mutantes sem guard de papel:\n${offenders.join('\n')}`).toEqual([])
+  })
 })
