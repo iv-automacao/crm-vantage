@@ -237,6 +237,10 @@ export async function POST() {
         .eq('account_id', accountId)
         .eq('name', t.name)
         .eq('language', t.language)
+        // Defesa: se houver duplicata residual pré-033, pega o mais recente
+        // em vez de deixar o PostgREST lançar "multiple rows".
+        .order('last_submitted_at', { ascending: false, nullsFirst: false })
+        .limit(1)
         .maybeSingle()
 
       if (lookupErr) {

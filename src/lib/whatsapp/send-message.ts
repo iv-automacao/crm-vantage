@@ -196,6 +196,10 @@ export async function sendMessageToConversation(
       .eq('account_id', accountId)
       .eq('name', template_name)
       .eq('language', template_language || 'en_US')
+      // Defesa: se houver duplicata residual pré-033, pega o mais recente
+      // em vez de deixar o PostgREST lançar "multiple rows".
+      .order('last_submitted_at', { ascending: false, nullsFirst: false })
+      .limit(1)
       .maybeSingle()
     if (data && !isMessageTemplate(data)) {
       return {
