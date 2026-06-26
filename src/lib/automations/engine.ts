@@ -16,6 +16,7 @@ import type {
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
 import { engineSendText, engineSendTemplate } from './meta-send'
+import { assignNextAgent } from '@/lib/leads/round-robin'
 
 // ------------------------------------------------------------
 // Public API
@@ -427,18 +428,15 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     case 'assign_conversation': {
       const cfg = step.step_config as AssignConversationStepConfig
       if (!args.contactId) throw new Error('assign_conversation needs a contact')
-      let agentId = cfg.agent_id
+
+      // Rodízio real via RPC atômica do Postgres — substitui o stub anterior
       if (cfg.mode === 'round_robin') {
-        // Pick any member of the account. The existing implementation
-        // only ever returned the automation's author; preserving that
-        // shape until a real round-robin algorithm replaces it.
-        const { data: profiles } = await db
-          .from('profiles')
-          .select('user_id')
-          .eq('account_id', args.automation.account_id)
-          .limit(1)
-        agentId = profiles?.[0]?.user_id
+        const { agentId } = await assignNextAgent(db, args.automation.account_id, args.contactId)
+        return agentId ? `assigned to ${agentId} (round-robin)` : 'no agent available (round-robin)'
       }
+
+      // Modo específico: usa o agent_id configurado diretamente no passo
+      const agentId = cfg.agent_id
       if (!agentId) return 'no agent resolved'
       await db
         .from('conversations')

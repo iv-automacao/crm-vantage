@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { resumePendingExecution } from '@/lib/automations/engine'
 import type { AutomationContext } from '@/lib/automations/engine'
+import { assignNextAgent } from '@/lib/leads/round-robin'
 
 /**
  * Drain due `automation_pending_executions` rows. Meant to be hit
@@ -44,10 +45,12 @@ export async function GET(request: Request) {
     console.error('[automations-cron] due scan failed:', error.message)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
-  if (!due || due.length === 0) return NextResponse.json({ processed: 0 })
 
+  // Normaliza para array vazio quando não há linhas pendentes — evita
+  // early return que pularia o segundo passe de distribuição automática.
+  const dueRows = due ?? []
   let processed = 0
-  for (const row of due) {
+  for (const row of dueRows) {
     const { data: claim } = await admin
       .from('automation_pending_executions')
       .update({ status: 'running' })
@@ -74,5 +77,29 @@ export async function GET(request: Request) {
     processed++
   }
 
-  return NextResponse.json({ processed })
+  // ── Segundo passe: fila de espera da distribuição automática ──────────
+  // Leads que chegaram sem ninguém disponível ficaram com
+  // autoassign_waiting=true. Assim que um vendedor fica disponível, o cron
+  // atribui o MAIS ANTIGO primeiro. assignNextAgent limpa o flag + seta o
+  // assigned_agent_id de forma atômica; o guard `.is(null)` torna o passe
+  // idempotente sob execuções sobrepostas.
+  let assigned = 0
+  const { data: waiting } = await admin
+    .from('conversations')
+    .select('id, account_id, contact_id')
+    .eq('autoassign_waiting', true)
+    .order('created_at', { ascending: true })
+    .limit(100)
+  for (const c of waiting ?? []) {
+    const { data: s } = await admin
+      .from('lead_autoassign_settings')
+      .select('is_active')
+      .eq('account_id', c.account_id as string)
+      .maybeSingle()
+    if (!s?.is_active) continue
+    const { agentId } = await assignNextAgent(admin, c.account_id as string, c.contact_id as string)
+    if (agentId) assigned++
+  }
+
+  return NextResponse.json({ processed, assigned })
 }

@@ -163,6 +163,10 @@ export const RATE_LIMITS = {
   conversationsRead: { limit: 240, windowMs: 60_000 },
   /** Disparo de broadcast via API. APERTADO (custa $) — por conta. */
   broadcastSend: { limit: 10, windowMs: 60_000 },
+  /** Presença do vendedor: toggle Disponível + heartbeat de atividade.
+   *  Por usuário. O heartbeat bate a cada ~4min; 30/min cobre bursts de
+   *  foco/aba sem custo. */
+  presence: { limit: 30, windowMs: 60_000 },
 } as const;
 
 /** Helper exclusivo para testes. Limpa o estado em memória para que testes
