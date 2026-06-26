@@ -49,6 +49,8 @@ export interface SectionMeta {
   label: string;
   icon: LucideIcon;
   group: 'top' | 'account' | 'workspace';
+  /** Se true, a seção só aparece na rail para quem tem `edit-settings` ou `manage-members`. */
+  adminOnly?: boolean;
 }
 
 export const SECTION_META: Record<SettingsSection, SectionMeta> = {
@@ -56,15 +58,16 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   profile: { id: 'profile', label: 'Seu perfil', icon: User, group: 'account' },
   security: { id: 'security', label: 'Login e segurança', icon: Shield, group: 'account' },
   appearance: { id: 'appearance', label: 'Aparência', icon: Palette, group: 'account' },
-  whatsapp: { id: 'whatsapp', label: 'WhatsApp', icon: PlugZap, group: 'workspace' },
-  templates: { id: 'templates', label: 'Modelos', icon: FileText, group: 'workspace' },
-  fields: { id: 'fields', label: 'Campos e etiquetas', icon: Tags, group: 'workspace' },
-  deals: { id: 'deals', label: 'Negócios e moeda', icon: Coins, group: 'workspace' },
-  members: { id: 'members', label: 'Membros da equipe', icon: UsersRound, group: 'workspace' },
-  api: { id: 'api', label: 'API / Integrações', icon: KeyRound, group: 'workspace' },
-  webhooks: { id: 'webhooks', label: 'Webhooks', icon: Webhook, group: 'workspace' },
-  capi: { id: 'capi', label: 'CAPI / Meta', icon: Target, group: 'workspace' },
-  leads: { id: 'leads', label: 'Distribuição de leads', icon: Shuffle, group: 'workspace' },
+  // Seções admin+ — só aparecem na rail para quem tem edit-settings ou manage-members
+  whatsapp: { id: 'whatsapp', label: 'WhatsApp', icon: PlugZap, group: 'workspace', adminOnly: true },
+  templates: { id: 'templates', label: 'Modelos', icon: FileText, group: 'workspace', adminOnly: true },
+  fields: { id: 'fields', label: 'Campos e etiquetas', icon: Tags, group: 'workspace', adminOnly: true },
+  deals: { id: 'deals', label: 'Negócios e moeda', icon: Coins, group: 'workspace', adminOnly: true },
+  members: { id: 'members', label: 'Membros da equipe', icon: UsersRound, group: 'workspace', adminOnly: true },
+  api: { id: 'api', label: 'API / Integrações', icon: KeyRound, group: 'workspace', adminOnly: true },
+  webhooks: { id: 'webhooks', label: 'Webhooks', icon: Webhook, group: 'workspace', adminOnly: true },
+  capi: { id: 'capi', label: 'CAPI / Meta', icon: Target, group: 'workspace', adminOnly: true },
+  leads: { id: 'leads', label: 'Distribuição de leads', icon: Shuffle, group: 'workspace', adminOnly: true },
 };
 
 export const RAIL_GROUPS: { label: string | null; group: SectionMeta['group'] }[] = [

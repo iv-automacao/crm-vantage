@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Loader2, Plus, Tag as TagIcon, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
+import { useCan } from '@/hooks/use-can';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -44,6 +45,8 @@ const PRESET_COLORS = [
 export function TagManager() {
   const supabase = createClient();
   const { user, accountId, loading: authLoading } = useAuth();
+  // Criação e exclusão de etiquetas são ações admin+
+  const canEditSettings = useCan('edit-settings');
 
   const [loading, setLoading] = useState(true);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -183,14 +186,16 @@ export function TagManager() {
                       style={{ backgroundColor: tag.color }}
                     />
                     {tag.name}
-                    <button
-                      type="button"
-                      onClick={() => confirmDelete(tag)}
-                      aria-label={`Excluir ${tag.name}`}
-                      className="ml-0.5 rounded-full p-0.5 opacity-60 transition-opacity hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10"
-                    >
-                      <X className="size-3" />
-                    </button>
+                    {canEditSettings && (
+                      <button
+                        type="button"
+                        onClick={() => confirmDelete(tag)}
+                        aria-label={`Excluir ${tag.name}`}
+                        className="ml-0.5 rounded-full p-0.5 opacity-60 transition-opacity hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    )}
                   </span>
                 ))}
               </div>
@@ -200,51 +205,53 @@ export function TagManager() {
               </p>
             )}
 
-            {/* Inline create row */}
-            <div className="flex flex-wrap items-center gap-2.5">
-              <Input
-                placeholder="ex.: Newsletter"
-                value={newTagName}
-                onChange={(e) => setNewTagName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleCreate();
-                }}
-                disabled={saving}
-                maxLength={40}
-                className="min-w-[180px] flex-1"
-              />
-              <div className="flex gap-1.5">
-                {PRESET_COLORS.map((color) => (
-                  <button
-                    key={color.value}
-                    type="button"
-                    onClick={() => setSelectedColor(color.value)}
-                    aria-label={`Usar ${color.name}`}
-                    aria-pressed={selectedColor === color.value}
-                    className={cn(
-                      'size-6 rounded-md transition-transform hover:scale-110',
-                      selectedColor === color.value &&
-                        'outline outline-2 outline-offset-2 outline-primary',
-                    )}
-                    style={{ backgroundColor: color.value }}
-                    title={color.name}
-                  />
-                ))}
+            {/* Inline create row — visível apenas para admin+ */}
+            {canEditSettings && (
+              <div className="flex flex-wrap items-center gap-2.5">
+                <Input
+                  placeholder="ex.: Newsletter"
+                  value={newTagName}
+                  onChange={(e) => setNewTagName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreate();
+                  }}
+                  disabled={saving}
+                  maxLength={40}
+                  className="min-w-[180px] flex-1"
+                />
+                <div className="flex gap-1.5">
+                  {PRESET_COLORS.map((color) => (
+                    <button
+                      key={color.value}
+                      type="button"
+                      onClick={() => setSelectedColor(color.value)}
+                      aria-label={`Usar ${color.name}`}
+                      aria-pressed={selectedColor === color.value}
+                      className={cn(
+                        'size-6 rounded-md transition-transform hover:scale-110',
+                        selectedColor === color.value &&
+                          'outline outline-2 outline-offset-2 outline-primary',
+                      )}
+                      style={{ backgroundColor: color.value }}
+                      title={color.name}
+                    />
+                  ))}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCreate}
+                  disabled={saving || !newTagName.trim()}
+                >
+                  {saving ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Plus className="size-4" />
+                  )}
+                  Adicionar etiqueta
+                </Button>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleCreate}
-                disabled={saving || !newTagName.trim()}
-              >
-                {saving ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Plus className="size-4" />
-                )}
-                Adicionar etiqueta
-              </Button>
-            </div>
+            )}
           </>
         )}
       </CardContent>

@@ -17,6 +17,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { createClient } from "@/lib/supabase/client";
+import { useCan } from "@/hooks/use-can";
 import type { Pipeline, PipelineStage } from "@/types";
 import {
   Dialog,
@@ -69,6 +70,8 @@ export function PipelineSettings({
   onCreateNewPipeline,
 }: PipelineSettingsProps) {
   const supabase = createClient();
+  // Apenas admin+ pode criar/editar/excluir funis e etapas
+  const canEditSettings = useCan('edit-settings');
 
   const [name, setName] = useState(pipeline.name);
   const [localStages, setLocalStages] = useState<PipelineStage[]>(stages);
@@ -243,6 +246,7 @@ export function PipelineSettings({
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
+                  disabled={!canEditSettings}
                   className="border-border bg-muted text-foreground"
                 />
               </div>
@@ -275,72 +279,81 @@ export function PipelineSettings({
                           }}
                           onRemove={() => handleRemoveStage(stage.id)}
                           colors={STAGE_COLORS}
+                          canEdit={canEditSettings}
                         />
                       ))}
                     </div>
                   </SortableContext>
                 </DndContext>
 
-                {/* Add new stage */}
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {STAGE_COLORS.map((color) => (
-                    <button
-                      key={color}
-                      type="button"
-                      onClick={() => setNewStageColor(color)}
-                      className="h-5 w-5 rounded-full border-2 transition-transform hover:scale-110"
-                      style={{
-                        backgroundColor: color,
-                        borderColor:
-                          newStageColor === color
-                            ? "var(--foreground)"
-                            : "transparent",
-                      }}
-                      aria-label={`Escolher cor ${color}`}
-                    />
-                  ))}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Input
-                    value={newStageName}
-                    onChange={(e) => setNewStageName(e.target.value)}
-                    placeholder="Nome da nova etapa"
-                    className="border-border bg-muted text-sm text-foreground"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleAddStage();
-                    }}
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleAddStage}
-                    disabled={!newStageName.trim()}
-                    className="shrink-0 border-border bg-transparent text-muted-foreground hover:bg-muted"
-                  >
-                    <Plus className="mr-1 h-3 w-3" />
-                    Adicionar
-                  </Button>
-                </div>
+                {/* Add new stage — visível apenas para admin+ */}
+                {canEditSettings && (
+                  <>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {STAGE_COLORS.map((color) => (
+                        <button
+                          key={color}
+                          type="button"
+                          onClick={() => setNewStageColor(color)}
+                          className="h-5 w-5 rounded-full border-2 transition-transform hover:scale-110"
+                          style={{
+                            backgroundColor: color,
+                            borderColor:
+                              newStageColor === color
+                                ? "var(--foreground)"
+                                : "transparent",
+                          }}
+                          aria-label={`Escolher cor ${color}`}
+                        />
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={newStageName}
+                        onChange={(e) => setNewStageName(e.target.value)}
+                        placeholder="Nome da nova etapa"
+                        className="border-border bg-muted text-sm text-foreground"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleAddStage();
+                        }}
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAddStage}
+                        disabled={!newStageName.trim()}
+                        className="shrink-0 border-border bg-transparent text-muted-foreground hover:bg-muted"
+                      >
+                        <Plus className="mr-1 h-3 w-3" />
+                        Adicionar
+                      </Button>
+                    </div>
+                  </>
+                )}
               </div>
 
-              <Button
-                variant="outline"
-                onClick={onCreateNewPipeline}
-                className="w-full border-border bg-transparent text-muted-foreground hover:bg-muted"
-              >
-                <Plus className="mr-1 h-3 w-3" />
-                Criar um novo funil
-              </Button>
+              {canEditSettings && (
+                <Button
+                  variant="outline"
+                  onClick={onCreateNewPipeline}
+                  className="w-full border-border bg-transparent text-muted-foreground hover:bg-muted"
+                >
+                  <Plus className="mr-1 h-3 w-3" />
+                  Criar um novo funil
+                </Button>
+              )}
             </div>
 
             <DialogFooter className="border-border bg-popover/50">
-              <Button
-                variant="destructive"
-                onClick={() => setShowDeleteConfirm(true)}
-                className="mr-auto bg-red-600 hover:bg-red-700"
-              >
-                Excluir funil
-              </Button>
+              {canEditSettings && (
+                <Button
+                  variant="destructive"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="mr-auto bg-red-600 hover:bg-red-700"
+                >
+                  Excluir funil
+                </Button>
+              )}
               <Button
                 variant="outline"
                 onClick={() => onOpenChange(false)}
@@ -350,7 +363,7 @@ export function PipelineSettings({
               </Button>
               <Button
                 onClick={handleSave}
-                disabled={saving || !name.trim()}
+                disabled={saving || !name.trim() || !canEditSettings}
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {saving ? "Salvando..." : "Salvar alterações"}
@@ -369,12 +382,14 @@ function SortableStageRow({
   onColorChange,
   onRemove,
   colors,
+  canEdit,
 }: {
   stage: PipelineStage;
   onNameChange: (v: string) => void;
   onColorChange: (v: string) => void;
   onRemove: () => void;
   colors: string[];
+  canEdit?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: stage.id });
@@ -404,16 +419,19 @@ function SortableStageRow({
       <Input
         value={stage.name}
         onChange={(e) => onNameChange(e.target.value)}
+        disabled={!canEdit}
         className="h-7 flex-1 border-transparent bg-transparent text-sm text-foreground focus:border-border"
       />
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        onClick={onRemove}
-        className="text-muted-foreground hover:text-red-400"
-      >
-        <Trash2 className="h-3 w-3" />
-      </Button>
+      {canEdit && (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={onRemove}
+          className="text-muted-foreground hover:text-red-400"
+        >
+          <Trash2 className="h-3 w-3" />
+        </Button>
+      )}
     </div>
   );
 }

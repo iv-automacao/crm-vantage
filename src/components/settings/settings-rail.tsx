@@ -32,7 +32,8 @@ export function SettingsRail({
   hints?: Partial<Record<SettingsSection, ReactNode>>;
 }) {
   const activeRef = useRef<HTMLButtonElement>(null);
-  // Seção "Modelos" é exclusiva de admin — ocultar da rail pra não-admin.
+  // Seções admin+ são marcadas com adminOnly: true em settings-sections.ts.
+  // Qualquer papel que tenha edit-settings (admin/owner) enxerga todas.
   const canEditSettings = useCan('edit-settings');
 
   // When horizontal (mobile), keep the active chip in view. On desktop
@@ -60,8 +61,8 @@ export function SettingsRail({
         const items = SETTINGS_SECTIONS.filter(
           (s) =>
             SECTION_META[s].group === group &&
-            // Seção "Modelos" é admin+ — ocultar pra membros sem edit-settings.
-            (s !== 'templates' || canEditSettings),
+            // Seções admin+ só aparecem na rail para quem tem edit-settings.
+            (!SECTION_META[s].adminOnly || canEditSettings),
         );
         return (
           <div

@@ -16,7 +16,9 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
+import { useCan } from '@/hooks/use-can';
 import { Button } from '@/components/ui/button';
+import { GatedButton } from '@/components/ui/gated-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -43,6 +45,8 @@ export function WhatsAppConfig() {
   // joined an account sees the inviter's saved config without
   // having to re-enter anything.
   const { user, accountId, loading: authLoading, profileLoading } = useAuth();
+  // Gate de edição — apenas admin+ altera credenciais do WhatsApp
+  const canEditSettings = useCan('edit-settings');
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -561,6 +565,7 @@ export function WhatsAppConfig() {
                 placeholder="ex. 100234567890123"
                 value={phoneNumberId}
                 onChange={(e) => setPhoneNumberId(e.target.value)}
+                disabled={!canEditSettings}
                 className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
               />
             </div>
@@ -571,6 +576,7 @@ export function WhatsAppConfig() {
                 placeholder="ex. 100234567890456"
                 value={wabaId}
                 onChange={(e) => setWabaId(e.target.value)}
+                disabled={!canEditSettings}
                 className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
               />
             </div>
@@ -592,6 +598,7 @@ export function WhatsAppConfig() {
                       setTokenEdited(true);
                     }
                   }}
+                  disabled={!canEditSettings}
                   className="bg-muted border-border text-foreground placeholder:text-muted-foreground pr-10"
                 />
                 <button
@@ -615,6 +622,7 @@ export function WhatsAppConfig() {
                 placeholder="Crie um verify token personalizado"
                 value={verifyToken}
                 onChange={(e) => setVerifyToken(e.target.value)}
+                disabled={!canEditSettings}
                 className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
               />
               <p className="text-xs text-muted-foreground">
@@ -636,6 +644,7 @@ export function WhatsAppConfig() {
                 onChange={(e) =>
                   setPin(e.target.value.replace(/\D/g, '').slice(0, 6))
                 }
+                disabled={!canEditSettings}
                 className="bg-muted border-border text-foreground placeholder:text-muted-foreground tracking-widest"
               />
               <p className="text-xs text-muted-foreground leading-relaxed">
@@ -691,7 +700,9 @@ export function WhatsAppConfig() {
 
         {/* Action Buttons */}
         <div className="flex flex-wrap gap-3">
-          <Button
+          <GatedButton
+            canAct={canEditSettings}
+            gateReason="editar a conexão do WhatsApp"
             onClick={handleSave}
             disabled={saving}
             className="bg-primary hover:bg-primary/90 text-primary-foreground"
@@ -704,7 +715,7 @@ export function WhatsAppConfig() {
             ) : (
               'Salvar configuração'
             )}
-          </Button>
+          </GatedButton>
           <Button
             variant="outline"
             onClick={handleTestConnection}
@@ -724,7 +735,9 @@ export function WhatsAppConfig() {
             )}
           </Button>
           {config && (
-            <Button
+            <GatedButton
+              canAct={canEditSettings}
+              gateReason="editar a conexão do WhatsApp"
               variant="outline"
               onClick={handleReset}
               disabled={resetting}
@@ -741,7 +754,7 @@ export function WhatsAppConfig() {
                   Redefinir configuração
                 </>
               )}
-            </Button>
+            </GatedButton>
           )}
         </div>
       </div>
