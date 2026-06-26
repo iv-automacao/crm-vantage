@@ -19,7 +19,9 @@ import {
   MEDIA_MAX_BYTES_BY_KIND,
 } from '@/lib/storage/upload-media';
 import { useAuth } from '@/hooks/use-auth';
+import { useCan } from '@/hooks/use-can';
 import { Button } from '@/components/ui/button';
+import { GatedButton } from '@/components/ui/gated-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -142,6 +144,7 @@ function emptyButton(type: TemplateButton['type']): TemplateButton {
 export function TemplateManager() {
   const supabase = createClient();
   const { user, loading: authLoading } = useAuth();
+  const canEditSettings = useCan('edit-settings');
 
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
@@ -509,19 +512,25 @@ export function TemplateManager() {
         }
         action={
           <div className="flex items-center gap-2">
-            <Button
+            <GatedButton
               variant="outline"
+              canAct={canEditSettings}
+              gateReason="Apenas administradores gerenciam modelos"
               onClick={handleSyncFromMeta}
               disabled={syncing}
               title="Puxar modelos aprovados da sua Conta do WhatsApp Business na Meta"
             >
               <RefreshCw className={`size-4 ${syncing ? 'animate-spin' : ''}`} />
               {syncing ? 'Sincronizando…' : 'Sincronizar da Meta'}
-            </Button>
-            <Button onClick={openCreate}>
+            </GatedButton>
+            <GatedButton
+              canAct={canEditSettings}
+              gateReason="Apenas administradores gerenciam modelos"
+              onClick={openCreate}
+            >
               <Plus className="size-4" />
               Novo modelo
-            </Button>
+            </GatedButton>
           </div>
         }
       />
@@ -593,9 +602,11 @@ export function TemplateManager() {
                   </div>
                   <div className="flex items-center gap-1 shrink-0 ml-2">
                     {statusKey === 'APPROVED' && (
-                      <Button
+                      <GatedButton
                         variant="ghost"
                         size="sm"
+                        canAct={canEditSettings}
+                        gateReason="Apenas administradores gerenciam modelos"
                         onClick={() => openEdit(template)}
                         title="Editar dispara nova revisão da Meta — o status volta para PENDING."
                         aria-label="Editar modelo"
@@ -603,12 +614,14 @@ export function TemplateManager() {
                       >
                         <Pencil className="size-3.5" />
                         Editar
-                      </Button>
+                      </GatedButton>
                     )}
                     {(statusKey === 'REJECTED' || statusKey === 'PAUSED') && (
-                      <Button
+                      <GatedButton
                         variant="ghost"
                         size="sm"
+                        canAct={canEditSettings}
+                        gateReason="Apenas administradores gerenciam modelos"
                         onClick={() => openEdit(template)}
                         title="Edite o modelo e reenvie à Meta para revisão."
                         aria-label="Editar e reenviar modelo"
@@ -616,11 +629,13 @@ export function TemplateManager() {
                       >
                         <RotateCcw className="size-3.5" />
                         Reenviar
-                      </Button>
+                      </GatedButton>
                     )}
-                    <Button
+                    <GatedButton
                       variant="ghost"
                       size="icon"
+                      canAct={canEditSettings}
+                      gateReason="Apenas administradores gerenciam modelos"
                       onClick={() => setTemplateToDelete(template)}
                       disabled={deletingId === template.id}
                       aria-label={
@@ -640,7 +655,7 @@ export function TemplateManager() {
                       ) : (
                         <Trash2 className="size-4" />
                       )}
-                    </Button>
+                    </GatedButton>
                   </div>
                 </CardContent>
               </Card>

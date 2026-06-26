@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
+import { useCan } from '@/hooks/use-can';
 import {
   RAIL_GROUPS,
   SECTION_META,
@@ -31,6 +32,8 @@ export function SettingsRail({
   hints?: Partial<Record<SettingsSection, ReactNode>>;
 }) {
   const activeRef = useRef<HTMLButtonElement>(null);
+  // Seção "Modelos" é exclusiva de admin — ocultar da rail pra não-admin.
+  const canEditSettings = useCan('edit-settings');
 
   // When horizontal (mobile), keep the active chip in view. On desktop
   // the rail is a static column, so skip.
@@ -55,7 +58,10 @@ export function SettingsRail({
     >
       {RAIL_GROUPS.map(({ label, group }) => {
         const items = SETTINGS_SECTIONS.filter(
-          (s) => SECTION_META[s].group === group,
+          (s) =>
+            SECTION_META[s].group === group &&
+            // Seção "Modelos" é admin+ — ocultar pra membros sem edit-settings.
+            (s !== 'templates' || canEditSettings),
         );
         return (
           <div
