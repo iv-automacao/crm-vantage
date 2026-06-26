@@ -24,6 +24,7 @@ import {
   Zap,
 } from "lucide-react";
 import type { AccountRole } from "@/lib/auth/roles";
+import { visibleNavItems } from "./nav-visibility";
 
 // Per-role chip metadata used in the sidebar's account strip + the
 // Members tab roster. Keeping this near both consumers in a single
@@ -84,6 +85,11 @@ interface NavItem {
    * Purely informational — doesn't affect routing or access.
    */
   beta?: boolean;
+  /**
+   * Papel mínimo necessário para exibir este item.
+   * Undefined = visível para todos os papéis.
+   */
+  minRole?: AccountRole;
 }
 
 const navItems: NavItem[] = [
@@ -91,13 +97,13 @@ const navItems: NavItem[] = [
   { href: "/inbox", label: "Caixa de entrada", icon: MessageSquare },
   { href: "/contacts", label: "Contatos", icon: Users },
   { href: "/pipelines", label: "Funis", icon: GitBranch },
-  { href: "/broadcasts", label: "Disparos", icon: Radio },
-  { href: "/automations", label: "Automações", icon: Zap },
-  { href: "/flows", label: "Fluxos", icon: Workflow, beta: true },
+  { href: "/broadcasts", label: "Disparos", icon: Radio, minRole: "admin" },
+  { href: "/automations", label: "Automações", icon: Zap, minRole: "admin" },
+  { href: "/flows", label: "Fluxos", icon: Workflow, beta: true, minRole: "admin" },
 ];
 
-const bottomNavItems = [
-  { href: "/settings", label: "Configurações", icon: Settings },
+const bottomNavItems: NavItem[] = [
+  { href: "/settings", label: "Configurações", icon: Settings, minRole: "admin" },
 ];
 
 interface SidebarProps {
@@ -108,7 +114,7 @@ interface SidebarProps {
 
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const pathname = usePathname();
-  const { profile, profileLoading, account, accountRole, signOut, isPlatformAdmin } = useAuth();
+  const { profile, profileLoading, account, accountRole, signOut, isPlatformAdmin, canEditSettings } = useAuth();
   const totalUnread = useTotalUnread();
   // Only surface the account-name strip when it actually carries
   // information. A solo user's personal account is named after them
@@ -203,7 +209,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         {/* Main navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="flex flex-col gap-1">
-            {navItems.map((item) => {
+            {visibleNavItems(navItems, accountRole).map((item) => {
               const isActive =
                 pathname === item.href ||
                 (item.href !== "/dashboard" && pathname.startsWith(item.href));
@@ -251,7 +257,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
           <div className="my-4 border-t border-border" />
 
           <ul className="flex flex-col gap-1">
-            {bottomNavItems.map((item) => {
+            {visibleNavItems(bottomNavItems, accountRole).map((item) => {
               const isActive = pathname.startsWith(item.href);
               return (
                 <li key={item.href}>
@@ -378,18 +384,20 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                 <User className="size-4" />
                 Perfil
               </DropdownMenuItem>
-              <DropdownMenuItem
-                render={
-                  <Link
-                    href="/settings?tab=whatsapp"
-                    onClick={onClose}
-                    className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
-                  />
-                }
-              >
-                <Settings className="size-4" />
-                Configurações
-              </DropdownMenuItem>
+              {canEditSettings && (
+                <DropdownMenuItem
+                  render={
+                    <Link
+                      href="/settings?tab=whatsapp"
+                      onClick={onClose}
+                      className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
+                    />
+                  }
+                >
+                  <Settings className="size-4" />
+                  Configurações
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator className="bg-border" />
               <DropdownMenuItem
                 onClick={signOut}
