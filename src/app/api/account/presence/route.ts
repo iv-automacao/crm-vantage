@@ -3,7 +3,7 @@
 // POST — heartbeat de atividade; atualiza last_activity_at.
 import { NextResponse } from 'next/server'
 
-import { requireActiveAccount, toErrorResponse } from '@/lib/auth/account'
+import { requireActiveAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
 export async function GET() {
@@ -35,7 +35,7 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   try {
-    const ctx = await requireActiveAccount()
+    const ctx = await requireRole('agent')
 
     // Rate limit por usuário — cobre toggle manual e qualquer burst.
     const rl = await checkRateLimit(`presence:${ctx.userId}`, RATE_LIMITS.presence)
@@ -47,9 +47,9 @@ export async function PUT(request: Request) {
     }
 
     // Constrói patch apenas com os booleanos fornecidos — campos ausentes não tocam o DB.
+    // in_pool é exclusivo do admin e gerido via lead-autoassign; não aceitar aqui.
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
     if (typeof body.is_available === 'boolean') patch.is_available = body.is_available
-    if (typeof body.in_pool === 'boolean') patch.in_pool = body.in_pool
 
     if (Object.keys(patch).length === 1) {
       // Só tem updated_at; nenhum campo útil foi enviado.
@@ -75,7 +75,7 @@ export async function PUT(request: Request) {
 
 export async function POST() {
   try {
-    const ctx = await requireActiveAccount()
+    const ctx = await requireRole('agent')
 
     // Rate limit compartilhado com o PUT — heartbeat e toggle usam o mesmo bucket.
     const rl = await checkRateLimit(`presence:${ctx.userId}`, RATE_LIMITS.presence)
