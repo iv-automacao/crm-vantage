@@ -32,6 +32,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useCan } from "@/hooks/use-can";
 
 interface DealFormProps {
   open: boolean;
@@ -54,6 +55,7 @@ export function DealForm({
 }: DealFormProps) {
   const supabase = createClient();
   const { accountId, defaultCurrency } = useAuth();
+  const canDelete = useCan('edit-settings');
 
   const [title, setTitle] = useState("");
   const [value, setValue] = useState("");
@@ -444,7 +446,7 @@ export function DealForm({
               </Button>
             </div>
 
-            {deal &&
+            {deal && canDelete &&
               (confirmDelete ? (
                 <div className="mt-3 flex items-center justify-between gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs">
                   <span className="text-red-300">Excluir este negócio?</span>
