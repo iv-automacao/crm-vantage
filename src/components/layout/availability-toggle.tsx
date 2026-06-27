@@ -127,7 +127,7 @@ function LeadAvailabilityControlInner() {
         checked={receiving ?? true}
         disabled={!loaded}
         onCheckedChange={handleToggle}
-        aria-label={receiving ? 'Recebendo leads' : 'Pausado'}
+        aria-label={!loaded ? 'Carregando disponibilidade' : receiving ? 'Recebendo leads' : 'Pausado'}
       />
       {/* Label oculta em telas muito pequenas para caber no header de 56px. */}
       <span
@@ -138,7 +138,7 @@ function LeadAvailabilityControlInner() {
             : 'text-muted-foreground',
         ].join(' ')}
       >
-        {loaded && receiving ? 'Recebendo leads' : 'Pausado'}
+        {!loaded ? 'Carregando…' : receiving ? 'Recebendo leads' : 'Pausado'}
       </span>
     </div>
   )
