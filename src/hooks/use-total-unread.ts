@@ -3,6 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Conversation } from "@/types";
+import { useAuth } from "@/hooks/use-auth";
+import {
+  agentSeesOnlyAssigned,
+  conversationVisibleTo,
+} from "@/lib/leads/visibility";
 
 /**
  * Count of conversations with at least one unread inbound message for
@@ -14,6 +19,7 @@ import type { Conversation } from "@/types";
  */
 export function useTotalUnread(): number {
   const [total, setTotal] = useState(0);
+  const { user, accountRole } = useAuth();
 
   // Keep a live local mirror of {id: unread_count} so INSERT/UPDATE/DELETE
   // events can adjust the total in O(1) without refetching.
@@ -23,12 +29,19 @@ export function useTotalUnread(): number {
     const supabase = createClient();
     let cancelled = false;
 
-    // Initial load. RLS scopes this to the signed-in user automatically —
-    // no explicit user_id filter needed here.
+    // Carga inicial. A RLS escopa por CONTA (todos os membros da conta veem
+    // tudo no banco). O escopo por colaborador (agent vê só os leads dele)
+    // é feito aqui no app: filtramos por assigned_agent_id quando necessário.
     (async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("conversations")
         .select("id, unread_count");
+
+      if (agentSeesOnlyAssigned(accountRole) && user) {
+        query = query.eq("assigned_agent_id", user.id);
+      }
+
+      const { data, error } = await query;
       if (cancelled || error || !data) return;
 
       const map = new Map<string, number>();
@@ -54,6 +67,9 @@ export function useTotalUnread(): number {
             if (oldRow.id) map.delete(oldRow.id);
           } else {
             const row = payload.new as Conversation;
+            // Ignorar conversas que o colaborador não pode enxergar —
+            // não incrementar o badge para leads de outros atendentes.
+            if (!conversationVisibleTo(row, accountRole, user?.id)) return;
             map.set(row.id, row.unread_count ?? 0);
           }
           // Recompute — cheap, conversations per user stay small.
@@ -68,7 +84,7 @@ export function useTotalUnread(): number {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [user, accountRole]);
 
   return total;
 }
