@@ -65,7 +65,7 @@ export function ConversationList({
   onConversationsLoaded,
   resyncToken = 0,
 }: ConversationListProps) {
-  const { user, accountRole } = useAuth();
+  const { user, accountRole, profileLoading } = useAuth();
   const userId = user?.id ?? null;
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
@@ -89,6 +89,12 @@ export function ConversationList({
   });
 
   useEffect(() => {
+    // Aguarda o perfil resolver antes de montar a query — evita carregar todas
+    // as conversas durante o ciclo transitório em que accountRole é null.
+    // A lista permanece em loading (estado inicial) até o perfil resolver e a
+    // fetch rodar de fato.
+    if (profileLoading) return;
+
     const supabase = createClient();
     let cancelled = false;
 
@@ -129,7 +135,9 @@ export function ConversationList({
     // o WS estava desconectado ou throttled.
     // `accountRole` e `userId` garantem que o fetch re-rode quando o perfil
     // resolver (evita carregar todas as conversas antes do papel do usuário chegar).
-  }, [resyncToken, accountRole, userId]);
+    // `profileLoading` garante que o guard acima reaja quando o perfil terminar
+    // de carregar — dispara a fetch assim que o papel está disponível.
+  }, [resyncToken, accountRole, userId, profileLoading]);
 
   const filtered = useMemo(() => {
     // Rede de segurança pro realtime: filtra por visibilidade antes dos filtros

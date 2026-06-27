@@ -19,7 +19,7 @@ import {
  */
 export function useTotalUnread(): number {
   const [total, setTotal] = useState(0);
-  const { user, accountRole } = useAuth();
+  const { user, accountRole, profileLoading } = useAuth();
   const userId = user?.id ?? null;
 
   // Keep a live local mirror of {id: unread_count} so INSERT/UPDATE/DELETE
@@ -27,6 +27,10 @@ export function useTotalUnread(): number {
   const countsRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
+    // Aguarda o perfil resolver antes de contar — evita inflar o badge com
+    // todas as conversas durante o ciclo transitório em que accountRole é null.
+    if (profileLoading) return;
+
     const supabase = createClient();
     let cancelled = false;
 
@@ -65,6 +69,9 @@ export function useTotalUnread(): number {
           const map = countsRef.current;
           if (payload.eventType === "DELETE") {
             const oldRow = payload.old as Partial<Conversation>;
+            // O countsRef só contém ids visíveis ao usuário (a carga inicial e
+            // o ramo INSERT/UPDATE já filtram por conversationVisibleTo). Deletar
+            // um id ausente no Map é no-op seguro — não precisa re-filtrar aqui.
             if (oldRow.id) map.delete(oldRow.id);
           } else {
             const row = payload.new as Conversation;
@@ -85,7 +92,7 @@ export function useTotalUnread(): number {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [userId, accountRole]);
+  }, [userId, accountRole, profileLoading]);
 
   return total;
 }
