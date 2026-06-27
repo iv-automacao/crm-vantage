@@ -300,6 +300,18 @@ export function AuthProvider({
 
   const signOut = useCallback(async () => {
     const supabase = createClient();
+    // Marca a presença como offline ANTES do signOut — depois o cookie some e a
+    // rota daria 401. Fire-and-forget: keepalive garante o envio durante a
+    // navegação; NÃO awaitar pra uma rota lenta não travar o logout. Best-effort
+    // — o beacon de pagehide e a janela de 5min cobrem qualquer falha.
+    void fetch("/api/account/presence", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ offline: true }),
+      keepalive: true,
+    }).catch(() => {
+      // ignora — saída de presença é best-effort
+    });
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
