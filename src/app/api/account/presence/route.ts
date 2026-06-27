@@ -1,6 +1,6 @@
 // GET  — retorna presença própria do vendedor (in_pool, is_available).
-// PUT  — atualiza disponibilidade/pool com rate limit por usuário.
-// POST — heartbeat de atividade; atualiza last_activity_at.
+// PUT  — pausa/retoma recebimento (is_available) com rate limit por usuário.
+// POST — heartbeat (last_activity_at = now); corpo { offline: true } zera a presença.
 import { NextResponse } from 'next/server'
 
 import { requireActiveAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
@@ -22,9 +22,10 @@ export async function GET() {
       return NextResponse.json({ error: 'Falha ao buscar presença' }, { status: 500 })
     }
 
-    // Sem linha (não-agente ou trigger ainda não rodou) — retorna padrão inerte.
+    // Sem linha (não-agente, ou trigger ainda não materializou) — default do
+    // modelo é "recebendo" (is_available=true), pra não nascer "Pausado" no botão.
     if (!data) {
-      return NextResponse.json({ in_pool: false, is_available: false })
+      return NextResponse.json({ in_pool: false, is_available: true })
     }
 
     return NextResponse.json({ in_pool: data.in_pool, is_available: data.is_available })
@@ -73,19 +74,28 @@ export async function PUT(request: Request) {
   }
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     const ctx = await requireRole('agent')
 
-    // Rate limit compartilhado com o PUT — heartbeat e toggle usam o mesmo bucket.
+    // Rate limit compartilhado com o PUT — heartbeat, offline e toggle no mesmo bucket.
     const rl = await checkRateLimit(`presence:${ctx.userId}`, RATE_LIMITS.presence)
     if (!rl.success) return rateLimitResponse(rl)
 
+    // Corpo opcional: { offline: true } marca saída imediata (logout/fechar aba),
+    // zerando last_activity_at -> ausente na hora. Sem corpo = heartbeat normal.
+    // Compatível com navigator.sendBeacon (POST com Blob JSON).
+    const body = (await request.json().catch(() => null)) as { offline?: boolean } | null
+    const goingOffline = body?.offline === true
+
     const now = new Date().toISOString()
+    const patch = goingOffline
+      ? { last_activity_at: null, updated_at: now }
+      : { last_activity_at: now, updated_at: now }
 
     const { error } = await ctx.supabase
       .from('agent_presence')
-      .update({ last_activity_at: now, updated_at: now })
+      .update(patch)
       .eq('account_id', ctx.accountId)
       .eq('user_id', ctx.userId)
 

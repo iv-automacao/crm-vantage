@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server'
 
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
-import { isAvailableNow } from '@/lib/leads/round-robin'
+import { onlineNow } from '@/lib/leads/round-robin'
 
 // ─── Tipos da view retornada pelo GET e PUT ──────────────────────────────────
 
@@ -14,7 +14,7 @@ interface RosterEntry {
   email: string | null
   in_pool: boolean
   is_available: boolean
-  available_now: boolean
+  online_now: boolean
 }
 
 interface AutoassignView {
@@ -72,14 +72,8 @@ async function buildView(
         email: (profile.email as string | null) ?? null,
         in_pool: Boolean(p.in_pool),
         is_available: Boolean(p.is_available),
-        available_now: isAvailableNow(
-          {
-            in_pool: Boolean(p.in_pool),
-            is_available: Boolean(p.is_available),
-            last_activity_at: p.last_activity_at as string | null,
-          },
-          now,
-        ),
+        // "Online agora" = só heartbeat (presença real); pausa/pool são separados.
+        online_now: onlineNow(p.last_activity_at as string | null, now),
       }
     })
 
