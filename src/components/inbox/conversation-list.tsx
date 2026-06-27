@@ -5,6 +5,11 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus } from "@/types";
 import { Search, ChevronDown } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+import {
+  agentSeesOnlyAssigned,
+  conversationVisibleTo,
+} from "@/lib/leads/visibility";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Input } from "@/components/ui/input";
@@ -14,7 +19,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface ConversationListProps {
@@ -61,6 +65,8 @@ export function ConversationList({
   onConversationsLoaded,
   resyncToken = 0,
 }: ConversationListProps) {
+  const { user, accountRole, profileLoading } = useAuth();
+  const userId = user?.id ?? null;
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
   const [loading, setLoading] = useState(true);
@@ -83,14 +89,25 @@ export function ConversationList({
   });
 
   useEffect(() => {
+    // Aguarda o perfil resolver antes de montar a query — evita carregar todas
+    // as conversas durante o ciclo transitório em que accountRole é null.
+    // A lista permanece em loading (estado inicial) até o perfil resolver e a
+    // fetch rodar de fato.
+    if (profileLoading) return;
+
     const supabase = createClient();
     let cancelled = false;
 
     (async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("conversations")
         .select("*, contact:contacts(*)")
         .order("last_message_at", { ascending: false });
+      // Fase 2: colaborador só vê as conversas atribuídas a ele.
+      if (agentSeesOnlyAssigned(accountRole) && userId) {
+        query = query.eq("assigned_agent_id", userId);
+      }
+      const { data, error } = await query;
 
       if (cancelled) return;
 
@@ -113,13 +130,23 @@ export function ConversationList({
     return () => {
       cancelled = true;
     };
-    // `resyncToken` is included so the parent can force a refetch when
-    // the realtime channel reconnects or the tab regains focus — catches
-    // up on any events sent while the WS was disconnected or throttled.
-  }, [resyncToken]);
+    // `resyncToken` é incluído pra o parent forçar um refetch no reconnect do
+    // realtime / quando a aba volta ao foco — captura eventos perdidos enquanto
+    // o WS estava desconectado ou throttled.
+    // `accountRole` e `userId` garantem que o fetch re-rode quando o perfil
+    // resolver (evita carregar todas as conversas antes do papel do usuário chegar).
+    // `profileLoading` garante que o guard acima reaja quando o perfil terminar
+    // de carregar — dispara a fetch assim que o papel está disponível.
+  }, [resyncToken, accountRole, userId, profileLoading]);
 
   const filtered = useMemo(() => {
-    let result = conversations;
+    // Rede de segurança pro realtime: filtra por visibilidade antes dos filtros
+    // de UI — cobre conversas que o parent injete em `conversations` via realtime
+    // sem passar pelo filtro da query (ex.: canal recebe evento de conversa de
+    // outro agent antes do papel do usuário estar resolvido).
+    let result = conversations.filter((c) =>
+      conversationVisibleTo(c, accountRole, userId),
+    );
 
     if (filter === "unread") {
       result = result.filter((c) => c.unread_count > 0);
@@ -138,7 +165,7 @@ export function ConversationList({
     }
 
     return result;
-  }, [conversations, filter, search]);
+  }, [conversations, filter, search, accountRole, userId]);
 
   const handleSearchChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
