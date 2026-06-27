@@ -5,6 +5,11 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus } from "@/types";
 import { Search, ChevronDown } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+import {
+  agentSeesOnlyAssigned,
+  conversationVisibleTo,
+} from "@/lib/leads/visibility";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Input } from "@/components/ui/input";
@@ -61,6 +66,7 @@ export function ConversationList({
   onConversationsLoaded,
   resyncToken = 0,
 }: ConversationListProps) {
+  const { user, accountRole } = useAuth();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
   const [loading, setLoading] = useState(true);
@@ -87,10 +93,15 @@ export function ConversationList({
     let cancelled = false;
 
     (async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("conversations")
         .select("*, contact:contacts(*)")
         .order("last_message_at", { ascending: false });
+      // Fase 2: colaborador só vê as conversas atribuídas a ele.
+      if (agentSeesOnlyAssigned(accountRole) && user) {
+        query = query.eq("assigned_agent_id", user.id);
+      }
+      const { data, error } = await query;
 
       if (cancelled) return;
 
@@ -113,13 +124,21 @@ export function ConversationList({
     return () => {
       cancelled = true;
     };
-    // `resyncToken` is included so the parent can force a refetch when
-    // the realtime channel reconnects or the tab regains focus — catches
-    // up on any events sent while the WS was disconnected or throttled.
-  }, [resyncToken]);
+    // `resyncToken` é incluído pra o parent forçar um refetch no reconnect do
+    // realtime / quando a aba volta ao foco — captura eventos perdidos enquanto
+    // o WS estava desconectado ou throttled.
+    // `accountRole` e `user?.id` garantem que o fetch re-rode quando o perfil
+    // resolver (evita carregar todas as conversas antes do papel do usuário chegar).
+  }, [resyncToken, accountRole, user?.id]);
 
   const filtered = useMemo(() => {
-    let result = conversations;
+    // Rede de segurança pro realtime: filtra por visibilidade antes dos filtros
+    // de UI — cobre conversas que o parent injete em `conversations` via realtime
+    // sem passar pelo filtro da query (ex.: canal recebe evento de conversa de
+    // outro agent antes do papel do usuário estar resolvido).
+    let result = conversations.filter((c) =>
+      conversationVisibleTo(c, accountRole, user?.id),
+    );
 
     if (filter === "unread") {
       result = result.filter((c) => c.unread_count > 0);
@@ -138,7 +157,7 @@ export function ConversationList({
     }
 
     return result;
-  }, [conversations, filter, search]);
+  }, [conversations, filter, search, accountRole, user?.id]);
 
   const handleSearchChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
