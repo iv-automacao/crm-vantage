@@ -29,7 +29,7 @@ interface RosterEntry {
   email: string | null;
   in_pool: boolean;
   is_available: boolean;
-  available_now: boolean;
+  online_now: boolean;
 }
 
 interface AutoassignView {
@@ -264,12 +264,12 @@ export function LeadAutoassignPanel() {
             <ul className="divide-y divide-border">
               {view.roster.map((agent) => (
                 <li key={agent.user_id} className="flex items-center gap-3 py-3">
-                  {/* Indicador de disponibilidade real (janela 15 min) */}
+                  {/* Presença real (heartbeat, janela 5min) — independe de pausa/pool */}
                   <span
                     className={`mt-0.5 size-2 shrink-0 rounded-full ${
-                      agent.available_now ? 'bg-green-500' : 'bg-muted-foreground/40'
+                      agent.online_now ? 'bg-green-500' : 'bg-muted-foreground/40'
                     }`}
-                    title={agent.available_now ? 'Disponível agora' : 'Ausente'}
+                    title={agent.online_now ? 'Online agora' : 'Ausente'}
                   />
 
                   {/* Nome e email */}
@@ -281,21 +281,23 @@ export function LeadAutoassignPanel() {
                       <p className="truncate text-xs text-muted-foreground">{agent.email}</p>
                     )}
                     <div className="mt-1 flex items-center gap-2">
-                      {/* Status de disponibilidade real */}
+                      {/* Presença real */}
                       <span
                         className={`text-[10px] font-medium ${
-                          agent.available_now ? 'text-green-400' : 'text-muted-foreground'
+                          agent.online_now ? 'text-green-400' : 'text-muted-foreground'
                         }`}
                       >
-                        {agent.available_now ? 'Disponível agora' : 'Ausente'}
+                        {agent.online_now ? 'Online agora' : 'Ausente'}
                       </span>
-                      {/* Estado do toggle manual do agente */}
-                      <Badge
-                        variant="outline"
-                        className="h-4 px-1 text-[9px] uppercase tracking-wide text-muted-foreground"
-                      >
-                        {agent.is_available ? 'toggle on' : 'toggle off'}
-                      </Badge>
+                      {/* Badge "Pausado" só quando o vendedor pausou o recebimento */}
+                      {!agent.is_available && (
+                        <Badge
+                          variant="outline"
+                          className="h-4 px-1 text-[9px] uppercase tracking-wide text-amber-400"
+                        >
+                          Pausado
+                        </Badge>
+                      )}
                     </div>
                   </div>
 
