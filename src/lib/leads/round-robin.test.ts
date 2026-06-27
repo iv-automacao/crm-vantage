@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pickIndex, isAvailableNow } from './round-robin'
+import { pickIndex, isAvailableNow, onlineNow } from './round-robin'
 
 // Data/hora fixa para todos os testes de disponibilidade
 const NOW = new Date('2026-06-25T12:00:00Z')
@@ -35,49 +35,47 @@ describe('pickIndex', () => {
   })
 })
 
+describe('onlineNow', () => {
+  it('true quando o heartbeat é recente (2min)', () => {
+    expect(onlineNow(msAgo(2 * MIN), NOW)).toBe(true)
+  })
+
+  it('false quando o heartbeat passou da janela (8min > 5min)', () => {
+    expect(onlineNow(msAgo(8 * MIN), NOW)).toBe(false)
+  })
+
+  it('false no limite exato da janela (5min)', () => {
+    expect(onlineNow(msAgo(5 * MIN), NOW)).toBe(false)
+  })
+
+  it('false quando last_activity_at é null', () => {
+    expect(onlineNow(null, NOW)).toBe(false)
+  })
+})
+
 describe('isAvailableNow', () => {
-  it('retorna true quando agente está completamente disponível (atividade há 5min)', () => {
-    const p = {
-      in_pool: true,
-      is_available: true,
-      last_activity_at: msAgo(5 * MIN),
-    }
+  it('true quando in_pool + recebendo + heartbeat recente (2min)', () => {
+    const p = { in_pool: true, is_available: true, last_activity_at: msAgo(2 * MIN) }
     expect(isAvailableNow(p, NOW)).toBe(true)
   })
 
-  it('retorna false quando is_available é false', () => {
-    const p = {
-      in_pool: true,
-      is_available: false,
-      last_activity_at: msAgo(5 * MIN),
-    }
+  it('false quando is_available (recebendo) é false — agente pausado', () => {
+    const p = { in_pool: true, is_available: false, last_activity_at: msAgo(2 * MIN) }
     expect(isAvailableNow(p, NOW)).toBe(false)
   })
 
-  it('retorna false quando in_pool é false', () => {
-    const p = {
-      in_pool: false,
-      is_available: true,
-      last_activity_at: msAgo(5 * MIN),
-    }
+  it('false quando in_pool é false', () => {
+    const p = { in_pool: false, is_available: true, last_activity_at: msAgo(2 * MIN) }
     expect(isAvailableNow(p, NOW)).toBe(false)
   })
 
-  it('retorna false quando atividade é antiga (há 20min — acima do limite de 15min)', () => {
-    const p = {
-      in_pool: true,
-      is_available: true,
-      last_activity_at: msAgo(20 * MIN),
-    }
+  it('false quando o heartbeat passou da janela (8min)', () => {
+    const p = { in_pool: true, is_available: true, last_activity_at: msAgo(8 * MIN) }
     expect(isAvailableNow(p, NOW)).toBe(false)
   })
 
-  it('retorna false quando last_activity_at é null', () => {
-    const p = {
-      in_pool: true,
-      is_available: true,
-      last_activity_at: null,
-    }
+  it('false quando last_activity_at é null', () => {
+    const p = { in_pool: true, is_available: true, last_activity_at: null }
     expect(isAvailableNow(p, NOW)).toBe(false)
   })
 })

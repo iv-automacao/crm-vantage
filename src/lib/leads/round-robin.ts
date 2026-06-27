@@ -16,9 +16,24 @@ export function pickIndex(cursor: number, poolSize: number): number {
 }
 
 /**
- * Predicado de disponibilidade que espelha a lógica SQL:
- * agente está disponível se estiver no pool, marcado como disponível,
- * e com atividade recente (dentro dos últimos 15 minutos).
+ * Janela de presença: tempo máximo desde o último heartbeat pra contar como
+ * "online agora". ESPELHA o INTERVAL do SQL pick_next_agent_round_robin
+ * (migration 035) — manter os dois em sincronia.
+ */
+export const PRESENCE_WINDOW_MS = 5 * 60 * 1000
+
+/**
+ * "Online agora" = heartbeat dentro da janela. Só presença real (aba aberta);
+ * NÃO considera in_pool nem pausa. Usado pelo painel do ADM (bolinha verde).
+ */
+export function onlineNow(lastActivityAt: string | null, now: Date): boolean {
+  if (lastActivityAt == null) return false
+  return now.getTime() - new Date(lastActivityAt).getTime() < PRESENCE_WINDOW_MS
+}
+
+/**
+ * Predicado de elegibilidade que espelha a lógica SQL: agente recebe lead se
+ * está no pool, recebendo (is_available) e online (heartbeat dentro da janela).
  */
 export function isAvailableNow(
   p: {
@@ -30,10 +45,7 @@ export function isAvailableNow(
 ): boolean {
   if (!p.in_pool) return false
   if (!p.is_available) return false
-  if (p.last_activity_at == null) return false
-
-  const idleMs = now.getTime() - new Date(p.last_activity_at).getTime()
-  return idleMs < 15 * 60 * 1000
+  return onlineNow(p.last_activity_at, now)
 }
 
 /**
