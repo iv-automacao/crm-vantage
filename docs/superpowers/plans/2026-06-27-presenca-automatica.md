@@ -47,6 +47,11 @@ Criar `supabase/migrations/035_presence_auto.sql` com EXATAMENTE este conteúdo:
 ALTER TABLE agent_presence ALTER COLUMN is_available SET DEFAULT true;
 
 -- Backfill: todos os agentes existentes passam a "recebendo".
+-- ATENÇÃO — o bit is_available MUDOU DE SIGNIFICADO: sob a 030 era o toggle
+-- manual "Disponível" (default false); aqui vira "recebendo leads" (default
+-- true). Este UPDATE RE-ATIVA o recebimento de quem tinha o toggle desligado de
+-- propósito. É esperado pelo novo modelo (online = recebendo), mas avise os
+-- vendedores: "Pausar" agora é por SESSÃO, não um "sempre off" persistente.
 -- NÃO mexe em in_pool: quem o ADM já configurou no rodízio continua.
 UPDATE agent_presence SET is_available = true WHERE is_available = false;
 
@@ -108,11 +113,13 @@ Esta é uma instrução pro Iago, não pro implementer. Depois de colar e rodar 
 SELECT
   (SELECT column_default FROM information_schema.columns
      WHERE table_name = 'agent_presence' AND column_name = 'is_available') AS default_is_available,
-  pg_get_functiondef('public.pick_next_agent_round_robin(uuid)'::regprocedure) LIKE '%5 minutes%' AS rpc_janela_5min,
-  pg_get_functiondef('public.autoassign_sync_agent_pool()'::regprocedure) LIKE '%false, true%' AS trigger_fora_do_pool;
+  pg_get_functiondef('public.pick_next_agent_round_robin(uuid)'::regprocedure) ILIKE '%5 minutes%' AS rpc_janela_5min,
+  pg_get_functiondef('public.autoassign_sync_agent_pool()'::regprocedure) ILIKE '%false, true%' AS trigger_fora_do_pool,
+  EXISTS (SELECT 1 FROM pg_trigger
+          WHERE tgname = 'trg_autoassign_sync_pool' AND NOT tgisinternal) AS trigger_ainda_bindado;
 ```
 
-Expected: `default_is_available = true`, `rpc_janela_5min = true`, `trigger_fora_do_pool = true`.
+Expected: `default_is_available = true`, `rpc_janela_5min = true`, `trigger_fora_do_pool = true`, `trigger_ainda_bindado = true`. (Usa `ILIKE` pra tolerar reformatação do `pg_get_functiondef`. Se `trigger_fora_do_pool` vier `false` mas você acredita que aplicou, confira lendo `pg_get_functiondef('public.autoassign_sync_agent_pool()'::regprocedure)` — o literal pode ter sido reescrito; o que importa é o INSERT inserir `in_pool = false`.)
 
 - [ ] **Step 3: Commit**
 
@@ -341,6 +348,23 @@ E atualizar o comentário do topo do arquivo (`:1-3`) para:
 // POST — heartbeat (last_activity_at = now); corpo { offline: true } zera a presença.
 ```
 
+E corrigir o default do GET pra linha ausente (`:25-28`) — com `is_available` significando "recebendo" (default true do modelo), uma linha ausente NÃO pode nascer "Pausado". Substituir:
+
+```ts
+    // Sem linha (não-agente ou trigger ainda não rodou) — retorna padrão inerte.
+    if (!data) {
+      return NextResponse.json({ in_pool: false, is_available: false })
+    }
+```
+por:
+```ts
+    // Sem linha (não-agente, ou trigger ainda não materializou) — default do
+    // modelo é "recebendo" (is_available=true), pra não nascer "Pausado" no botão.
+    if (!data) {
+      return NextResponse.json({ in_pool: false, is_available: true })
+    }
+```
+
 - [ ] **Step 2: typecheck**
 
 Run: `npm run typecheck`
@@ -458,8 +482,17 @@ function LeadAvailabilityControlInner() {
       else stop()
     }
 
+    // bfcache: back/forward RESTAURA a página sem remontar o componente, então
+    // este useEffect NÃO roda de novo. O pagehide acima zerou a presença ao
+    // entrar no bfcache; o pageshow com persisted=true religa o heartbeat na
+    // volta (start() já faz ping imediato + reinicia o intervalo).
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted && document.visibilityState === 'visible') start()
+    }
+
     document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('pagehide', goOffline)
+    window.addEventListener('pageshow', onPageShow)
 
     // Só inicia se a aba já está visível no mount.
     if (document.visibilityState === 'visible') start()
@@ -468,6 +501,7 @@ function LeadAvailabilityControlInner() {
       stop()
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('pagehide', goOffline)
+      window.removeEventListener('pageshow', onPageShow)
     }
   }, [])
 
@@ -534,7 +568,7 @@ Run: `npm run lint` → "errors" continua 3 (baseline); sem erro novo.
 
 - [ ] **Step 4: Teste manual (descrição)**
 
-Logado como `agent`: abrir o CRM → no painel do ADM (outra sessão) o agente aparece "Online agora" (verde) em até 2min. Clicar no switch pra OFF → label "Pausado"; no painel, badge "Pausado". Fechar a aba → em segundos o agente cai pra "Ausente" no painel (beacon).
+Logado como `agent`: abrir o CRM → no painel do ADM (outra sessão) o agente aparece "Online agora" (verde) em até 2min. Clicar no switch pra OFF → label "Pausado"; no painel, badge "Pausado". Fechar a aba: **desktop** cai pra "Ausente" em segundos (beacon do `pagehide`); **mobile** (iOS Safari) o `pagehide`/`sendBeacon` é menos confiável, então pode cair só pela janela (~5min) — comportamento esperado, não bug. Back/forward do navegador (bfcache) deve MANTER "Online agora" (handler `pageshow`).
 
 - [ ] **Step 5: Commit**
 
@@ -563,18 +597,17 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   const signOut = useCallback(async () => {
     const supabase = createClient();
     // Marca a presença como offline ANTES do signOut — depois o cookie some e a
-    // rota daria 401. keepalive garante o envio durante a navegação pra /login.
-    // Best-effort: o beacon de pagehide e a janela de 5min cobrem qualquer falha.
-    try {
-      await fetch("/api/account/presence", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ offline: true }),
-        keepalive: true,
-      });
-    } catch {
+    // rota daria 401. Fire-and-forget: keepalive garante o envio durante a
+    // navegação; NÃO awaitar pra uma rota lenta não travar o logout. Best-effort
+    // — o beacon de pagehide e a janela de 5min cobrem qualquer falha.
+    void fetch("/api/account/presence", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ offline: true }),
+      keepalive: true,
+    }).catch(() => {
       // ignora — saída de presença é best-effort
-    }
+    });
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
@@ -590,7 +623,7 @@ Run: `npm run lint` → "errors" continua 3 (baseline).
 
 - [ ] **Step 3: Teste manual (descrição)**
 
-Logado como `agent`, abrir o CRM (fica "Online agora" no painel do ADM). Clicar em Sair → na sessão do ADM, o agente cai pra "Ausente" imediatamente (sem esperar a janela).
+Logado como `agent`, abrir o CRM (fica "Online agora" no painel do ADM). Clicar em Sair → na sessão do ADM, o agente cai pra "Ausente" imediatamente (sem esperar a janela). Nota: se um lead chegar no exato instante do logout e esse agente era o único online, a conversa cai em `autoassign_waiting=true` e o cron reatribui quando alguém voltar a ficar elegível — é o comportamento desejado (sem perda nem duplo-assign pelo guard `.is(null)`), não bug.
 
 - [ ] **Step 4: Commit**
 
@@ -669,7 +702,7 @@ interface RosterEntry {
 }
 ```
 
-Bolinha de presença (`:268-273`), trocar por:
+Bolinha de presença — substituir o comentário órfão da linha 267 (`{/* Indicador de disponibilidade real (janela 15 min) */}`) JUNTO com o bloco (`:267-273`), trocando os dois por:
 ```tsx
                   {/* Presença real (heartbeat, janela 5min) — independe de pausa/pool */}
                   <span
@@ -744,3 +777,6 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - (b) **Migration manual:** o comportamento de runtime (default true, janela 5min, agente novo fora do pool) só vale DEPOIS do Iago aplicar a 035. Até lá, a UI da janela (5min) pode divergir do SQL (15min). Aplicar antes de mergear.
 - (c) **sendBeacon + cookie:** depende do cookie de sessão same-origin (Supabase SSR). O logout (Task 5) usa `keepalive` ANTES do signOut justamente porque o `pagehide` rodaria sem cookie.
 - (d) **available_now removido:** `isAvailableNow` deixa de ser chamado por `buildView`, mas continua exportado e testado como mirror do SQL — não é dead code (cobre o predicado do rodízio em teste).
+- (e) **bfcache:** o `pageshow` (Task 4) religa o heartbeat ao voltar via back/forward — sem ele o agente cairia por uma janela inteira. Coberto.
+- (f) **Backfill re-ativa pausados:** decisão consciente (bit mudou de significado) — documentada no comentário da migration; avisar vendedores existentes que "Pausar" agora é por sessão.
+- (g) **Re-onboarding:** o `ON CONFLICT DO NOTHING` protege quem já tem linha de presença. Mas um agent cuja linha foi deletada (rebaixado→repromovido) re-insere com `in_pool=false` (novo default) — cai fora do pool até o ADM religar "No rodízio". Aceitável; nota pro runbook/manual.
