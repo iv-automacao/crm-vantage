@@ -350,15 +350,17 @@ export default function PipelinesPage() {
                   {p.name}
                 </DropdownMenuItem>
               ))}
-              <DropdownMenuSeparator className="bg-border" />
-              {selectedPipeline && (
-                <DropdownMenuItem
-                  onClick={() => setSettingsOpen(true)}
-                  className="text-popover-foreground"
-                >
-                  <Settings className="mr-2 h-3.5 w-3.5" />
-                  Gerenciar funis
-                </DropdownMenuItem>
+              {canEditSettings && selectedPipeline && (
+                <>
+                  <DropdownMenuSeparator className="bg-border" />
+                  <DropdownMenuItem
+                    onClick={() => setSettingsOpen(true)}
+                    className="text-popover-foreground"
+                  >
+                    <Settings className="mr-2 h-3.5 w-3.5" />
+                    Gerenciar funis
+                  </DropdownMenuItem>
+                </>
               )}
             </DropdownMenuContent>
           </DropdownMenu>

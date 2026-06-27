@@ -83,7 +83,8 @@ const TEMPLATE_ICONS = {
 
 export default function FlowsPage() {
   const router = useRouter();
-  const canCreate = useCan("send-messages");
+  const canCreate = useCan("edit-settings");
+  const canManage = canCreate;
   const [flows, setFlows] = useState<FlowRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -216,7 +217,7 @@ export default function FlowsPage() {
         </div>
         <GatedButton
           canAct={canCreate}
-          gateReason="criar fluxos"
+          gateReason="Apenas administradores gerenciam fluxos"
           onClick={() => setCreateOpen(true)}
         >
           <Plus className="h-4 w-4" />
@@ -235,6 +236,7 @@ export default function FlowsPage() {
             <FlowCard
               key={flow.id}
               flow={flow}
+              canManage={canManage}
               onEdit={() => router.push(`/flows/${flow.id}`)}
               onDelete={() => handleDelete(flow)}
             />
@@ -344,7 +346,7 @@ function EmptyState({
       </p>
       <GatedButton
         canAct={canCreate}
-        gateReason="criar fluxos"
+        gateReason="Apenas administradores gerenciam fluxos"
         onClick={onCreate}
         className="mt-5"
       >
@@ -357,10 +359,12 @@ function EmptyState({
 
 function FlowCard({
   flow,
+  canManage,
   onEdit,
   onDelete,
 }: {
   flow: FlowRow;
+  canManage: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -403,21 +407,23 @@ function FlowCard({
         </span>
       </div>
 
-      <div className="mt-4 flex items-center justify-end gap-2 border-t border-border pt-3">
-        <Button variant="ghost" size="sm" onClick={onEdit}>
-          <Pencil className="h-3.5 w-3.5" />
-          Editar
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onDelete}
-          className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          Excluir
-        </Button>
-      </div>
+      {canManage && (
+        <div className="mt-4 flex items-center justify-end gap-2 border-t border-border pt-3">
+          <Button variant="ghost" size="sm" onClick={onEdit}>
+            <Pencil className="h-3.5 w-3.5" />
+            Editar
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onDelete}
+            className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Excluir
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

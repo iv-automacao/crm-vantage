@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
+import { useCan } from '@/hooks/use-can';
 import {
   RAIL_GROUPS,
   SECTION_META,
@@ -31,6 +32,9 @@ export function SettingsRail({
   hints?: Partial<Record<SettingsSection, ReactNode>>;
 }) {
   const activeRef = useRef<HTMLButtonElement>(null);
+  // Seções admin+ são marcadas com adminOnly: true em settings-sections.ts.
+  // Qualquer papel que tenha edit-settings (admin/owner) enxerga todas.
+  const canEditSettings = useCan('edit-settings');
 
   // When horizontal (mobile), keep the active chip in view. On desktop
   // the rail is a static column, so skip.
@@ -55,7 +59,10 @@ export function SettingsRail({
     >
       {RAIL_GROUPS.map(({ label, group }) => {
         const items = SETTINGS_SECTIONS.filter(
-          (s) => SECTION_META[s].group === group,
+          (s) =>
+            SECTION_META[s].group === group &&
+            // Seções admin+ só aparecem na rail para quem tem edit-settings.
+            (!SECTION_META[s].adminOnly || canEditSettings),
         );
         return (
           <div

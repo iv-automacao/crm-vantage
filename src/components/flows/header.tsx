@@ -29,8 +29,10 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { GatedButton } from "@/components/ui/gated-button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { useCan } from "@/hooks/use-can";
 import {
   useFlowEditor,
   type BuilderState,
@@ -38,6 +40,7 @@ import {
 
 export function EditorHeader() {
   const router = useRouter();
+  const canManage = useCan("edit-settings");
   const {
     flow,
     state,
@@ -95,7 +98,9 @@ export function EditorHeader() {
             <History className="h-3.5 w-3.5" />
             Execuções
           </Button>
-          <Button
+          <GatedButton
+            canAct={canManage}
+            gateReason="Apenas administradores gerenciam fluxos"
             variant="ghost"
             size="sm"
             onClick={() => void deleteFlow()}
@@ -103,9 +108,11 @@ export function EditorHeader() {
           >
             <Trash2 className="h-3.5 w-3.5" />
             Excluir
-          </Button>
+          </GatedButton>
           {state.status === "active" ? (
-            <Button
+            <GatedButton
+              canAct={canManage}
+              gateReason="Apenas administradores gerenciam fluxos"
               variant="outline"
               size="sm"
               onClick={() => void setStatus("draft")}
@@ -117,9 +124,11 @@ export function EditorHeader() {
                 <PauseCircle className="h-3.5 w-3.5" />
               )}
               Pausar
-            </Button>
+            </GatedButton>
           ) : (
-            <Button
+            <GatedButton
+              canAct={canManage}
+              gateReason="Apenas administradores gerenciam fluxos"
               variant="outline"
               size="sm"
               onClick={() => void setStatus("active")}
@@ -136,16 +145,22 @@ export function EditorHeader() {
                 <PlayCircle className="h-3.5 w-3.5" />
               )}
               Ativar
-            </Button>
+            </GatedButton>
           )}
-          <Button onClick={() => void save()} disabled={saving} size="sm">
+          <GatedButton
+            canAct={canManage}
+            gateReason="Apenas administradores gerenciam fluxos"
+            onClick={() => void save()}
+            disabled={saving}
+            size="sm"
+          >
             {saving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <Save className="h-3.5 w-3.5" />
             )}
             Salvar
-          </Button>
+          </GatedButton>
         </div>
       </div>
       <Input

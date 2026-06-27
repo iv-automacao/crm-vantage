@@ -59,7 +59,8 @@ const TEMPLATE_ICON: Record<TemplateSlug, typeof Zap> = {
 
 export default function AutomationsPage() {
   const router = useRouter()
-  const canCreate = useCan("send-messages")
+  const canCreate = useCan("edit-settings")
+  const canManage = canCreate
   const [automations, setAutomations] = useState<Automation[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Automation | null>(null)
@@ -167,7 +168,7 @@ export default function AutomationsPage() {
         </div>
         <GatedButton
           canAct={canCreate}
-          gateReason="criar automações"
+          gateReason="Apenas administradores gerenciam automações"
           onClick={() => router.push("/automations/new")}
           className="bg-primary text-primary-foreground hover:bg-primary/90"
         >
@@ -217,6 +218,7 @@ export default function AutomationsPage() {
             <AutomationCard
               key={a.id}
               automation={a}
+              canManage={canManage}
               onToggle={(next) => toggleActive(a, next)}
               onEdit={() => router.push(`/automations/${a.id}/edit`)}
               onDuplicate={() => duplicate(a)}
@@ -262,6 +264,7 @@ export default function AutomationsPage() {
 
 function AutomationCard({
   automation,
+  canManage,
   onToggle,
   onEdit,
   onDuplicate,
@@ -269,6 +272,7 @@ function AutomationCard({
   onDelete,
 }: {
   automation: Automation
+  canManage: boolean
   onToggle: (next: boolean) => void
   onEdit: () => void
   onDuplicate: () => void
@@ -327,6 +331,7 @@ function AutomationCard({
             checked={automation.is_active}
             onCheckedChange={(v) => onToggle(!!v)}
             aria-label={automation.is_active ? "Desativar" : "Ativar"}
+            disabled={!canManage}
           />
 
           <DropdownMenu>
@@ -337,23 +342,31 @@ function AutomationCard({
               <MoreVertical className="h-4 w-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={onEdit}>
-                <Pencil className="h-4 w-4" />
-                Editar
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onDuplicate}>
-                <Copy className="h-4 w-4" />
-                Duplicar
-              </DropdownMenuItem>
+              {canManage && (
+                <DropdownMenuItem onClick={onEdit}>
+                  <Pencil className="h-4 w-4" />
+                  Editar
+                </DropdownMenuItem>
+              )}
+              {canManage && (
+                <DropdownMenuItem onClick={onDuplicate}>
+                  <Copy className="h-4 w-4" />
+                  Duplicar
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={onLogs}>
                 <FileText className="h-4 w-4" />
                 Ver logs
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" onClick={onDelete}>
-                <Trash2 className="h-4 w-4" />
-                Excluir
-              </DropdownMenuItem>
+              {canManage && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                    <Trash2 className="h-4 w-4" />
+                    Excluir
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
