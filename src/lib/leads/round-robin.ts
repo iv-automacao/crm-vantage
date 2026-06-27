@@ -32,7 +32,7 @@ export function onlineNow(lastActivityAt: string | null, now: Date): boolean {
 }
 
 /**
- * Predicado de elegibilidade que espelha a lógica SQL: agente recebe lead se
+ * Predicado de elegibilidade que espelha a lógica SQL (migration 035): agente recebe lead se
  * está no pool, recebendo (is_available) e online (heartbeat dentro da janela).
  */
 export function isAvailableNow(

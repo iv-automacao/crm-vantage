@@ -82,9 +82,12 @@ function LeadAvailabilityControlInner() {
     // bfcache: back/forward RESTAURA a página sem remontar o componente, então
     // este useEffect NÃO roda de novo. O pagehide acima zerou a presença ao
     // entrar no bfcache; o pageshow com persisted=true religa o heartbeat na
-    // volta (start() já faz ping imediato + reinicia o intervalo).
+    // volta com stop() pra limpar o intervalo congelado + start() com ping imediato.
     const onPageShow = (e: PageTransitionEvent) => {
-      if (e.persisted && document.visibilityState === 'visible') start()
+      if (e.persisted && document.visibilityState === 'visible') {
+        stop()
+        start()
+      }
     }
 
     document.addEventListener('visibilitychange', onVisibility)
