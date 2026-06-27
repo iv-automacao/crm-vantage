@@ -20,6 +20,7 @@ import {
 export function useTotalUnread(): number {
   const [total, setTotal] = useState(0);
   const { user, accountRole } = useAuth();
+  const userId = user?.id ?? null;
 
   // Keep a live local mirror of {id: unread_count} so INSERT/UPDATE/DELETE
   // events can adjust the total in O(1) without refetching.
@@ -37,8 +38,8 @@ export function useTotalUnread(): number {
         .from("conversations")
         .select("id, unread_count");
 
-      if (agentSeesOnlyAssigned(accountRole) && user) {
-        query = query.eq("assigned_agent_id", user.id);
+      if (agentSeesOnlyAssigned(accountRole) && userId) {
+        query = query.eq("assigned_agent_id", userId);
       }
 
       const { data, error } = await query;
@@ -69,7 +70,7 @@ export function useTotalUnread(): number {
             const row = payload.new as Conversation;
             // Ignorar conversas que o colaborador não pode enxergar —
             // não incrementar o badge para leads de outros atendentes.
-            if (!conversationVisibleTo(row, accountRole, user?.id)) return;
+            if (!conversationVisibleTo(row, accountRole, userId)) return;
             map.set(row.id, row.unread_count ?? 0);
           }
           // Recompute — cheap, conversations per user stay small.
@@ -84,7 +85,7 @@ export function useTotalUnread(): number {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [user, accountRole]);
+  }, [userId, accountRole]);
 
   return total;
 }

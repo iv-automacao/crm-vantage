@@ -19,7 +19,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface ConversationListProps {
@@ -67,6 +66,7 @@ export function ConversationList({
   resyncToken = 0,
 }: ConversationListProps) {
   const { user, accountRole } = useAuth();
+  const userId = user?.id ?? null;
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
   const [loading, setLoading] = useState(true);
@@ -98,8 +98,8 @@ export function ConversationList({
         .select("*, contact:contacts(*)")
         .order("last_message_at", { ascending: false });
       // Fase 2: colaborador só vê as conversas atribuídas a ele.
-      if (agentSeesOnlyAssigned(accountRole) && user) {
-        query = query.eq("assigned_agent_id", user.id);
+      if (agentSeesOnlyAssigned(accountRole) && userId) {
+        query = query.eq("assigned_agent_id", userId);
       }
       const { data, error } = await query;
 
@@ -127,9 +127,9 @@ export function ConversationList({
     // `resyncToken` é incluído pra o parent forçar um refetch no reconnect do
     // realtime / quando a aba volta ao foco — captura eventos perdidos enquanto
     // o WS estava desconectado ou throttled.
-    // `accountRole` e `user?.id` garantem que o fetch re-rode quando o perfil
+    // `accountRole` e `userId` garantem que o fetch re-rode quando o perfil
     // resolver (evita carregar todas as conversas antes do papel do usuário chegar).
-  }, [resyncToken, accountRole, user?.id]);
+  }, [resyncToken, accountRole, userId]);
 
   const filtered = useMemo(() => {
     // Rede de segurança pro realtime: filtra por visibilidade antes dos filtros
@@ -137,7 +137,7 @@ export function ConversationList({
     // sem passar pelo filtro da query (ex.: canal recebe evento de conversa de
     // outro agent antes do papel do usuário estar resolvido).
     let result = conversations.filter((c) =>
-      conversationVisibleTo(c, accountRole, user?.id),
+      conversationVisibleTo(c, accountRole, userId),
     );
 
     if (filter === "unread") {
@@ -157,7 +157,7 @@ export function ConversationList({
     }
 
     return result;
-  }, [conversations, filter, search, accountRole, user?.id]);
+  }, [conversations, filter, search, accountRole, userId]);
 
   const handleSearchChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
