@@ -52,6 +52,8 @@ Os dialogs de **criar** e **rotacionar** exibem, prontos pra colar:
 ## Fora de escopo (YAGNI)
 - "Revelar token a qualquer momento" (escolhido rotacionar).
 - Integridade/anti-replay (HMAC) — abandonado de propósito (n8n próprio, HTTPS).
+
+> **Trade-off de segurança (reconhecido):** o token estático viaja igual em todo request e fica **em repouso** no log de execução do n8n (o nó Webhook guarda os headers recebidos, visíveis em Executions) e em proxies (Easypanel/reverse-proxy) — diferente do HMAC, que nunca transmite o secret. HTTPS cobre só o trânsito, não o repouso. Mitigação: retenção curta de execuções no n8n + **Rotacionar** se o token vazar. Aceitável pro modelo (n8n próprio).
 - Assinatura de entrada (Meta) — intocada.
 - Migration — nenhuma (reusa coluna `secret` existente).
 

@@ -25,6 +25,8 @@
 **Files:**
 - Modify: `src/lib/webhooks/dispatch.ts`
 - Modify: `src/lib/webhooks/dispatch.test.ts`
+- Modify: `src/lib/webhooks/secret.ts` (só comentário-doc, Step 4d)
+- Modify: `src/app/api/account/webhooks/route.ts` (só comentário-doc, Step 4e)
 - Delete: `src/lib/webhooks/signature.ts`, `src/lib/webhooks/signature.test.ts`
 
 **Interfaces:**
@@ -33,8 +35,9 @@
 
 - [ ] **Step 1: Confirmar que `signature.ts` só é usado no outbound**
 
-Run: `grep -rn "signWebhookPayload\|webhooks/signature" src --include=*.ts --include=*.tsx`
-Expected: ocorrências SOMENTE em `src/lib/webhooks/dispatch.ts`, `src/lib/webhooks/dispatch.test.ts` e `src/lib/webhooks/signature.test.ts`. Se aparecer em qualquer outro arquivo, PARE e reporte (NEEDS_CONTEXT) — a remoção não é segura.
+Run: `grep -rn "signWebhookPayload\|webhooks/signature" src --include="*.ts" --include="*.tsx"`
+(⚠️ globs **entre aspas** — no zsh do usuário `--include=*.ts` sem aspas quebra com "no matches found".)
+Expected: ocorrências SOMENTE em `src/lib/webhooks/dispatch.ts`, `src/lib/webhooks/dispatch.test.ts`, `src/lib/webhooks/signature.test.ts` e `src/lib/webhooks/signature.ts` (esta última é a **própria definição** — será deletada no Step 5; essa auto-ocorrência é ESPERADA, **não** dispara NEEDS_CONTEXT). Se aparecer em QUALQUER OUTRO arquivo, PARE e reporte (NEEDS_CONTEXT) — a remoção não é segura.
 
 - [ ] **Step 2: Atualizar o teste (RED) — header `x-webhook-token` no lugar da assinatura**
 
@@ -64,7 +67,7 @@ Em `src/lib/webhooks/dispatch.test.ts`:
 - [ ] **Step 3: Rodar o teste pra ver o RED**
 
 Run: `npx tsc --noEmit` e depois `npx vitest run src/lib/webhooks/dispatch.test.ts`
-Expected: typecheck quebra (import `signWebhookPayload` removido mas ainda usado? não — removido do teste; mas `dispatch.ts` ainda importa de `./signature`, que ainda existe, então typecheck passa). O teste FALHA: `init.headers['x-webhook-token']` é `undefined` (dispatch ainda manda `x-webhook-signature`).
+Expected: com 2a (remover o import) e 2b (substituir o teste) aplicados **juntos**, o **typecheck fica limpo** (`signature.ts` ainda existe, nenhum símbolo órfão). O **RED é puramente do vitest**: o teste novo FALHA porque `init.headers['x-webhook-token']` é `undefined` (o dispatch ainda manda `x-webhook-signature`).
 
 - [ ] **Step 4: Implementar — `dispatch.ts` manda o token estático**
 
@@ -90,6 +93,33 @@ para:
             'x-webhook-token': ep.secret,
 ```
 
+(d) Corrigir o comentário-doc obsoleto em `src/lib/webhooks/secret.ts` (linhas 5-7). Trocar:
+```ts
+// devolvido ao admin UMA vez na criação, e armazenado em texto
+// simples em `webhook_endpoints.secret` (usado pra assinar os
+// payloads com HMAC na entrega — não é um token de autenticação).
+```
+por:
+```ts
+// devolvido ao admin UMA vez na criação, e armazenado em texto
+// simples em `webhook_endpoints.secret` (enviado como token estático no
+// header `x-webhook-token` na entrega; validado pelo Header Auth do n8n).
+```
+
+(e) Corrigir o comentário-doc obsoleto em `src/app/api/account/webhooks/route.ts` (linhas 6-8). Trocar:
+```ts
+// O secret cru só existe na resposta do POST — depois disso, só o
+// valor em `webhook_endpoints.secret` vive no banco (usado pra assinar
+// payloads na entrega). Espelha o padrão de /api/account/api-keys.
+```
+por:
+```ts
+// O secret cru só existe na resposta do POST — depois disso, só o
+// valor em `webhook_endpoints.secret` vive no banco (enviado como token
+// estático no header `x-webhook-token` na entrega). Espelha o padrão de
+// /api/account/api-keys.
+```
+
 - [ ] **Step 5: Remover o `signature.ts` (dead code do outbound)**
 
 ```bash
@@ -104,11 +134,11 @@ Expected: typecheck limpo; testes do dispatch passam (incluindo o novo de `x-web
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/lib/webhooks/dispatch.ts src/lib/webhooks/dispatch.test.ts src/lib/webhooks/signature.ts src/lib/webhooks/signature.test.ts
+git add src/lib/webhooks/dispatch.ts src/lib/webhooks/dispatch.test.ts src/lib/webhooks/secret.ts src/app/api/account/webhooks/route.ts
 git commit -m "feat(webhook): token estatico x-webhook-token no lugar do HMAC (remove signature.ts)"
 ```
 
-> `git add` de um arquivo removido por `git rm` registra a remoção — por isso os 4 paths no add.
+> As remoções de `signature.ts`/`signature.test.ts` já foram staged pelo `git rm` do Step 5 — não precisam ser re-adicionadas. O `git add` acima cobre só os arquivos modificados.
 
 ---
 
@@ -401,7 +431,7 @@ Após o dialog de exclusão (depois da linha 503 `</Dialog>` do delete, antes do
               <SecretRevealBox secret={rotatedSecret} />
               <DialogFooter className="bg-popover border-border">
                 <Button
-                  onClick={() => setRotating(null)}
+                  onClick={() => { setRotating(null); setRotatedSecret(null); }}
                   className="bg-primary hover:bg-primary/90 text-primary-foreground"
                 >
                   Concluir
@@ -497,4 +527,5 @@ git commit -m "feat(webhook): UI rotacionar token + instrucao Header Auth do n8n
 ## Notas de risco
 - A remoção de `signature.ts` depende do grep do Step 1 (Task 1) não achar outros consumidores. Se achar, vira NEEDS_CONTEXT.
 - Endpoints existentes já têm `secret` — viram token estático automaticamente (sem migração). Quem já validava HMAC no n8n (se alguém) precisa trocar pra Header Auth — aceitável (ninguém valida ainda; runbook do #23).
-- `SecretRevealBox` define seu próprio `copy` (duplica o `copy` do painel) — proposital pra ser auto-contido no escopo de módulo; o `copy` do `WebhooksPanel` continua usado por outros pontos? Conferir no review: se ficar sem uso, removê-lo.
+- `SecretRevealBox` define seu próprio `copy` (auto-contido no escopo de módulo); o `copy` do `WebhooksPanel` fica órfão após o Step 6 e é removido lá (com grep de confirmação).
+- **Segurança (token em repouso):** diferente do HMAC (que nunca transmite o secret — só uma derivação por payload), o `x-webhook-token` viaja igual em todo request e é **persistido em texto puro** por quem loga headers — em especial o **log de execução do n8n** (o nó Webhook guarda os headers recebidos, visíveis em Executions) e proxies (Easypanel/reverse-proxy). HTTPS protege só o trânsito, não o repouso. Mitigação: retenção curta de execuções no n8n + o botão **Rotacionar** como contramedida se o token vazar. Aceitável pro modelo (n8n próprio), mas é o trade-off real de trocar HMAC por token estático.
