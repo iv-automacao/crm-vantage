@@ -63,12 +63,13 @@ Problemas concretos:
   - Se houver duplicatas: deduplicar respeitando FKs — `message_actions` e `message_reactions` referenciam `messages.id` (UUID interno), então **não** dá pra deletar a linha cegamente. Estratégia: manter a mais antiga, repontar filhos pra ela (ou só deletar dups sem filhos). Se a contagem for zero, pular direto pro índice.
   - `CREATE UNIQUE INDEX … ON messages(message_id) WHERE message_id IS NOT NULL;` (parcial — `message_id` é null em notas internas/mensagens sem wamid).
 - **Webhook:** o insert da mensagem inbound passa a tratar **violação de unique (`23505`) como reentrega** — mesmo padrão de `findOrCreateContact` (`webhook/route.ts:983`). Se for duplicata → **`return` cedo, pulando TODOS os efeitos**: dispatch do webhook, automações, CAPI/referral, autoassign, `first_inbound`, contadores.
-- Efeitos colaterais grátis: elimina o double-count de `unread_count` (#9) e o double-fire do webhook de saída na reentrega.
+- Efeitos colaterais grátis: elimina o double-count de `unread_count` **na reentrega do mesmo `message_id`** e o double-fire do webhook de saída na reentrega. (O race do #9 — 2 mensagens DISTINTAS concorrentes, read-modify-write em `route.ts:660` — **permanece** e exigiria RPC atômica; fora desta fatia.)
 
 ### 4. Não-bloqueante & ordem
 
-- Mover `dispatchMessageReceived` pra **depois do autoassign** e **executar por último, sem `await` no caminho crítico** (fire-and-forget best-effort, como já é a natureza dele — nunca lança).
-- Resultado: o dispatch não serializa mais autoassign/contadores; o `state.assigned_agent_id` reflete o dono já atribuído.
+- Mover `dispatchMessageReceived` pro **fim do `processMessage`** — roda **por último** (depois de autoassign, flow runner e automações), **`await`-ado**. O handler inteiro roda dentro de `after()`, onde um promise solto pode ser cortado antes de completar; então o `await` é o correto — o ganho de "não-bloqueante" vem de rodar **por último**, não de remover o `await`.
+- O `state` é lido **fresco do banco** logo antes do dispatch (re-SELECT de `status, assigned_agent_id, bot_paused`): `assigned_agent_id` reflete o autoassign e `bot_paused` reflete uma pausa feita no meio do processamento.
+- Resultado: o dispatch não serializa mais autoassign/contadores/flow runner/automações.
 
 ### 5. Hardening SSRF (auditoria #3) — nos dois caminhos
 
@@ -99,6 +100,7 @@ Problemas concretos:
 - Reforçar o payload da ação de automação "Enviar webhook" (Caminho B continua pra notificações).
 - Outbox durável / retry / observabilidade de entrega (decidido best-effort).
 - Auto-resume do bot (pausa é manual nos dois sentidos por enquanto).
+- **Race de 2 conversas** em `findOrCreateConversation` (2 mensagens concorrentes do mesmo contato novo criando 2 conversas, auditoria #3) — a idempotência por `message_id` **não** cobre isso; permanece conhecido e fora desta fatia.
 - Demais achados da auditoria: CAPI claim (#2), tenancy automations (#4), divergência sends (#5), cursor/janela rodízio (#6), gate aprovação GET (#7), media IDOR (#8), robustez crons (#10), rate-limit cobertura (#11). Cada um terá seu próprio brainstorm.
 
 ## Restrições
