@@ -7,6 +7,8 @@ import {
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils'
 import { supabaseAdmin } from './admin-client'
+import { buildConversationContext } from '@/lib/webhooks/enrich'
+import { buildMessageEventPayload, dispatchMessageEvent } from '@/lib/webhooks/dispatch'
 
 // ------------------------------------------------------------
 // Automation-side Meta sender.
@@ -147,15 +149,19 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   const content_text = input.kind === 'text' ? input.text : null
   const template_name = input.kind === 'template' ? input.templateName : null
 
-  const { error: msgErr } = await db.from('messages').insert({
-    conversation_id: input.conversationId,
-    sender_type: 'bot',
-    content_type,
-    content_text,
-    template_name,
-    message_id: waMessageId,
-    status: 'sent',
-  })
+  const { data: messageRecord, error: msgErr } = await db
+    .from('messages')
+    .insert({
+      conversation_id: input.conversationId,
+      sender_type: 'bot',
+      content_type,
+      content_text,
+      template_name,
+      message_id: waMessageId,
+      status: 'sent',
+    })
+    .select('id, content_type, content_text, created_at')
+    .single()
   if (msgErr) {
     // Meta already has the message; record the DB error but don't pretend
     // the send failed. The engine wraps this in a log line.
@@ -171,6 +177,44 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
       updated_at: new Date().toISOString(),
     })
     .eq('id', input.conversationId)
+
+  // Webhook outbound (best-effort): espelha o envio da automação pro n8n como
+  // message.sent com sender bot/automation. INTENCIONALMENTE SÍNCRONO (await):
+  // este código roda no engine/flow runner, que JÁ está dentro do after() do
+  // inbound (webhook/route.ts) — ou seja, já é pós-resposta. NÃO usar after()
+  // aqui (só as 2 ROTAS de envio usam after(), porque elas estão no caminho de
+  // request). O try/catch NUNCA propaga: derrubar o engine por causa do espelho
+  // não é aceitável. (sender.type:'bot' porque automação não é humano.)
+  try {
+    const context = await buildConversationContext(
+      db,
+      input.accountId,
+      input.conversationId,
+      input.contactId,
+    )
+    await dispatchMessageEvent(
+      db,
+      input.accountId,
+      buildMessageEventPayload({
+        event: 'message.sent',
+        direction: 'out',
+        accountId: input.accountId,
+        conversationId: input.conversationId,
+        sender: { type: 'bot', via: 'automation', actor_id: input.userId, actor_name: null, api_key_id: null },
+        contact: { id: contact.id, phone: contact.phone, name: null },
+        context,
+        message: {
+          id: messageRecord?.id ?? null,
+          whatsapp_message_id: waMessageId,
+          content_type: messageRecord?.content_type ?? content_type,
+          content_text: messageRecord?.content_text ?? content_text,
+          created_at: messageRecord?.created_at ?? null,
+        },
+      }),
+    )
+  } catch (e) {
+    console.warn('[webhooks] outbound automação falhou:', e instanceof Error ? e.message : e)
+  }
 
   return { whatsapp_message_id: waMessageId }
 }
