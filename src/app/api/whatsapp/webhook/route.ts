@@ -7,7 +7,8 @@ import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
-import { buildMessageReceivedPayload, dispatchMessageReceived } from '@/lib/webhooks/dispatch'
+import { buildMessageEventPayload, dispatchMessageEvent } from '@/lib/webhooks/dispatch'
+import { buildConversationContext } from '@/lib/webhooks/enrich'
 import { captureCtwaReferral } from '@/lib/capi/referral'
 import { assignNextAgent } from '@/lib/leads/round-robin'
 import {
@@ -774,32 +775,56 @@ async function processMessage(
   }
 
   // Webhook de saída do agente (best-effort, Caminho A): reencaminha o payload
-  // completo da Meta + o estado FRESCO da conversa (bot_paused, dono, status)
-  // pros endpoints da conta, pro n8n decidir se responde. Roda POR ÚLTIMO
-  // (depois de autoassign, flow runner e automações) pra não serializar o
-  // caminho crítico; AWAITED porque dentro do after() um promise solto pode ser
-  // cortado antes de completar. Re-lê a conversa pra o state não vir stale
-  // (assigned_agent_id pós-autoassign; bot_paused mudado no meio). Nunca lança.
-  const { data: freshConv } = await supabaseAdmin()
-    .from('conversations')
-    .select('status, assigned_agent_id, bot_paused')
-    .eq('id', conversation.id)
-    .maybeSingle()
-  await dispatchMessageReceived(
-    supabaseAdmin(),
+  // completo da Meta + o estado FRESCO da conversa + o contexto enriquecido
+  // (tags, agente, custom fields, deal, CTWA) pros endpoints da conta, pro n8n
+  // decidir se responde. Roda POR ÚLTIMO (depois de autoassign, flow runner e
+  // automações) pra não serializar o caminho crítico; AWAITED porque dentro do
+  // after() um promise solto pode ser cortado antes de completar. Re-lê a
+  // conversa pra o state não vir stale (assigned_agent_id pós-autoassign;
+  // bot_paused mudado no meio). Nunca lança.
+  const admin = supabaseAdmin()
+  // Enriquecimento best-effort: traz tags/custom/referral, estado+nome do
+  // agente e deal ativo. Substitui o re-SELECT manual de freshConv (o helper
+  // já lê o estado fresco da conversa, incl. assigned_agent_id pós-autoassign).
+  const context = await buildConversationContext(
+    admin,
     accountId,
-    buildMessageReceivedPayload({
+    conversation.id,
+    contactRecord.id,
+  )
+  // direction:'in' + sender de cliente via Meta. timestamp = horário da
+  // mensagem na Meta (epoch → ISO); o `meta` cru segue presente (aditivo,
+  // o consumidor atual de message.received depende dele).
+  const messageTimestampIso = (() => {
+    const epoch = parseInt(message.timestamp)
+    return Number.isFinite(epoch) ? new Date(epoch * 1000).toISOString() : new Date().toISOString()
+  })()
+  await dispatchMessageEvent(
+    admin,
+    accountId,
+    buildMessageEventPayload({
+      event: 'message.received',
+      direction: 'in',
       accountId,
       conversationId: conversation.id,
-      contact: { id: contactRecord.id, phone: contactRecord.phone, name: contactRecord.name ?? null },
-      state: {
-        bot_paused: freshConv?.bot_paused ?? false,
-        assigned_agent_id: (freshConv?.assigned_agent_id as string | null) ?? null,
-        conversation_status: String(freshConv?.status ?? conversation.status ?? 'open'),
+      sender: { type: 'customer', via: 'meta', actor_id: null, actor_name: null, api_key_id: null },
+      contact: {
+        id: contactRecord.id,
+        phone: contactRecord.phone,
+        name: contactRecord.name ?? null,
       },
-      metaMessage: message,
-      metaContact: contact,
-      metaMetadata: metaMetadata,
+      context,
+      message: {
+        id: null,
+        whatsapp_message_id: message.id ?? null,
+        content_type: message.type ?? null,
+        // `contentText` (não `inboundText`): contentText é null pra mídia/não-texto;
+        // `inboundText` tem fallback '' (nunca null) e mascararia mídia como ''.
+        content_text: contentText ?? null,
+        created_at: messageTimestampIso,
+      },
+      timestamp: messageTimestampIso,
+      meta: { message, contact, metadata: metaMetadata },
     }),
   )
 }
