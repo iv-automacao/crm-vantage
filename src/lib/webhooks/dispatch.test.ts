@@ -18,15 +18,17 @@ const basePayload: MessageReceivedPayload = {
   account_id: 'acc1',
   conversation_id: 'conv1',
   contact: baseContact,
+  state: { bot_paused: false, assigned_agent_id: null, conversation_status: 'open' },
   meta: { message: { text: 'oi' }, contact: {}, metadata: {} },
 }
 
 describe('buildMessageReceivedPayload', () => {
-  it('monta o objeto com event message.received', () => {
+  it('monta o objeto com event message.received e bloco state', () => {
     const result = buildMessageReceivedPayload({
       accountId: 'acc1',
       conversationId: 'conv1',
       contact: baseContact,
+      state: { bot_paused: true, assigned_agent_id: 'agent-9', conversation_status: 'pending' },
       metaMessage: { text: 'oi' },
       metaContact: {},
       metaMetadata: {},
@@ -35,6 +37,7 @@ describe('buildMessageReceivedPayload', () => {
     expect(result.account_id).toBe('acc1')
     expect(result.conversation_id).toBe('conv1')
     expect(result.contact).toEqual(baseContact)
+    expect(result.state).toEqual({ bot_paused: true, assigned_agent_id: 'agent-9', conversation_status: 'pending' })
     expect(result.meta).toEqual({ message: { text: 'oi' }, contact: {}, metadata: {} })
   })
 })
@@ -125,5 +128,22 @@ describe('dispatchMessageReceived', () => {
 
     await expect(dispatchMessageReceived(adminComErro, 'acc1', basePayload)).resolves.toBeUndefined()
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('endpoint com URL interna (SSRF) → fetch NÃO é chamado pra ele', async () => {
+    const admin = makeAdmin([{ id: 'epbad', url: 'http://169.254.169.254/latest', secret: 's' }])
+
+    await dispatchMessageReceived(admin, 'acc1', basePayload)
+
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('fetch é chamado com redirect:manual (não segue redirect pra interno)', async () => {
+    const admin = makeAdmin([{ id: 'ep1', url: 'https://n8n.example.com/webhook/abc', secret: 's' }])
+
+    await dispatchMessageReceived(admin, 'acc1', basePayload)
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(init.redirect).toBe('manual')
   })
 })

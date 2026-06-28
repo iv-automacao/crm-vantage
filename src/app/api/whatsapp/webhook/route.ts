@@ -640,6 +640,12 @@ async function processMessage(
       accountId,
       conversationId: conversation.id,
       contact: { id: contactRecord.id, phone: contactRecord.phone, name: contactRecord.name ?? null },
+      // Estado da conversa: n8n usa pra decidir se o bot deve responder.
+      state: {
+        bot_paused: conversation.bot_paused ?? false,
+        assigned_agent_id: conversation.assigned_agent_id ?? null,
+        conversation_status: conversation.status ?? 'open',
+      },
       metaMessage: message,       // value.messages[i] cru
       metaContact: contact,       // value.contacts[i] cru
       metaMetadata: metaMetadata, // value.metadata cru (novo parâmetro)
