@@ -4,8 +4,9 @@
 //
 // Restrito a admin+ via requireRole('admin').
 // O secret cru só existe na resposta do POST — depois disso, só o
-// valor em `webhook_endpoints.secret` vive no banco (usado pra assinar
-// payloads na entrega). Espelha o padrão de /api/account/api-keys.
+// valor em `webhook_endpoints.secret` vive no banco (enviado como token
+// estático no header `x-webhook-token` na entrega). Espelha o padrão de
+// /api/account/api-keys.
 // ============================================================
 
 import { NextResponse } from "next/server";

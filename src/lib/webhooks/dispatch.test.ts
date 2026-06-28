@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { buildMessageReceivedPayload, dispatchMessageReceived, type MessageReceivedPayload } from './dispatch'
-import { signWebhookPayload } from './signature'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 // Fake admin client factory
@@ -54,7 +53,7 @@ describe('dispatchMessageReceived', () => {
     vi.restoreAllMocks()
   })
 
-  it('1 endpoint ativo → fetch chamado 1x com assinatura e body corretos', async () => {
+  it('1 endpoint ativo → fetch chamado 1x com token e body corretos', async () => {
     const secret = 'whsec_test123'
     const admin = makeAdmin([{ id: 'ep1', url: 'https://n8n.example.com/webhook/abc', secret }])
 
@@ -65,9 +64,8 @@ describe('dispatchMessageReceived', () => {
     expect(url).toBe('https://n8n.example.com/webhook/abc')
     expect(init.method).toBe('POST')
     expect(init.body).toBe(JSON.stringify(basePayload))
-    expect(init.headers['x-webhook-signature']).toBe(
-      signWebhookPayload(JSON.stringify(basePayload), secret),
-    )
+    expect(init.headers['x-webhook-token']).toBe(secret)
+    expect(init.headers['x-webhook-signature']).toBeUndefined()
   })
 
   it('2 endpoints → 2 fetches', async () => {

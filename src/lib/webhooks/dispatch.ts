@@ -1,5 +1,4 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { signWebhookPayload } from './signature'
 import { isValidWebhookUrl } from './secret'
 
 export interface MessageReceivedPayload {
@@ -35,8 +34,9 @@ export function buildMessageReceivedPayload(args: {
   }
 }
 
-/** Entrega best-effort: busca endpoints ativos da conta e faz POST assinado.
- *  NUNCA lança (não pode derrubar o inbound webhook). Nunca loga o secret. */
+/** Entrega best-effort: busca endpoints ativos da conta e faz POST com token
+ *  estático no header (x-webhook-token). NUNCA lança (não pode derrubar o
+ *  inbound webhook). Nunca loga o secret. */
 export async function dispatchMessageReceived(
   admin: SupabaseClient, accountId: string, payload: MessageReceivedPayload,
 ): Promise<void> {
@@ -62,7 +62,7 @@ export async function dispatchMessageReceived(
           headers: {
             'content-type': 'application/json',
             'x-webhook-event': 'message.received',
-            'x-webhook-signature': signWebhookPayload(rawBody, ep.secret),
+            'x-webhook-token': ep.secret,
           },
           body: rawBody,
           redirect: 'manual', // não seguir redirect pra rede interna

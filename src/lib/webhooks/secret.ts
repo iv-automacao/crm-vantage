@@ -3,8 +3,8 @@
 //
 // Mesmo padrão de `api-keys.ts`: o secret é gerado com CSPRNG,
 // devolvido ao admin UMA vez na criação, e armazenado em texto
-// simples em `webhook_endpoints.secret` (usado pra assinar os
-// payloads com HMAC na entrega — não é um token de autenticação).
+// simples em `webhook_endpoints.secret` (enviado como token estático no
+// header `x-webhook-token` na entrega; validado pelo Header Auth do n8n).
 //
 // Formato: `whsec_<base64url(32 bytes)>`
 //   - prefixo `whsec_` facilita detecção em secret scanners.
