@@ -17,6 +17,7 @@ import type {
 import { supabaseAdmin } from './admin-client'
 import { engineSendText, engineSendTemplate } from './meta-send'
 import { assignNextAgent } from '@/lib/leads/round-robin'
+import { isValidWebhookUrl } from '@/lib/webhooks/secret'
 
 // ------------------------------------------------------------
 // Public API
@@ -529,11 +530,15 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     case 'send_webhook': {
       const cfg = step.step_config as SendWebhookStepConfig
       if (!cfg.url) throw new Error('send_webhook needs url')
+      // Hardening SSRF (#3): rejeita host interno/loopback/metadata + exige http(s).
+      if (!isValidWebhookUrl(cfg.url)) throw new Error('send_webhook: URL inválida ou bloqueada')
       const body = cfg.body_template ? interpolate(cfg.body_template, args) : JSON.stringify(args.context)
       const res = await fetch(cfg.url, {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...(cfg.headers ?? {}) },
         body,
+        redirect: 'manual',                  // não seguir redirect pra interno
+        signal: AbortSignal.timeout(10_000), // antes NÃO havia timeout (podia pendurar)
       })
       if (!res.ok) throw new Error(`webhook returned ${res.status}`)
       return `webhook ${res.status}`

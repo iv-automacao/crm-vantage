@@ -627,24 +627,17 @@ async function processMessage(
   })
 
   if (msgError) {
+    // Reentrega da Meta (at-least-once): com o índice único parcial em
+    // messages(message_id) (migration 036), reinserir a MESMA mensagem
+    // falha com 23505. Isso é ESPERADO — tratamos como duplicata e saímos
+    // ANTES de qualquer efeito colateral (dispatch, CAPI, autoassign,
+    // contadores), tornando o processamento idempotente.
+    if (isUniqueViolation(msgError)) {
+      return
+    }
     console.error('Error inserting message:', msgError)
     return
   }
-
-  // Webhook de saída (best-effort): reencaminha o payload completo da Meta
-  // pros endpoints da conta. Não bloqueia nem derruba o processamento.
-  await dispatchMessageReceived(
-    supabaseAdmin(),
-    accountId,
-    buildMessageReceivedPayload({
-      accountId,
-      conversationId: conversation.id,
-      contact: { id: contactRecord.id, phone: contactRecord.phone, name: contactRecord.name ?? null },
-      metaMessage: message,       // value.messages[i] cru
-      metaContact: contact,       // value.contacts[i] cru
-      metaMetadata: metaMetadata, // value.metadata cru (novo parâmetro)
-    }),
-  )
 
   // Captura de atribuição CTWA (best-effort): se o lead veio de um anúncio
   // Click-to-WhatsApp, guarda o `ctwa_clid` no contato pra devolver a
@@ -779,6 +772,36 @@ async function processMessage(
       },
     }).catch((err) => console.error('[automations] dispatch failed:', err))
   }
+
+  // Webhook de saída do agente (best-effort, Caminho A): reencaminha o payload
+  // completo da Meta + o estado FRESCO da conversa (bot_paused, dono, status)
+  // pros endpoints da conta, pro n8n decidir se responde. Roda POR ÚLTIMO
+  // (depois de autoassign, flow runner e automações) pra não serializar o
+  // caminho crítico; AWAITED porque dentro do after() um promise solto pode ser
+  // cortado antes de completar. Re-lê a conversa pra o state não vir stale
+  // (assigned_agent_id pós-autoassign; bot_paused mudado no meio). Nunca lança.
+  const { data: freshConv } = await supabaseAdmin()
+    .from('conversations')
+    .select('status, assigned_agent_id, bot_paused')
+    .eq('id', conversation.id)
+    .maybeSingle()
+  await dispatchMessageReceived(
+    supabaseAdmin(),
+    accountId,
+    buildMessageReceivedPayload({
+      accountId,
+      conversationId: conversation.id,
+      contact: { id: contactRecord.id, phone: contactRecord.phone, name: contactRecord.name ?? null },
+      state: {
+        bot_paused: freshConv?.bot_paused ?? false,
+        assigned_agent_id: (freshConv?.assigned_agent_id as string | null) ?? null,
+        conversation_status: String(freshConv?.status ?? conversation.status ?? 'open'),
+      },
+      metaMessage: message,
+      metaContact: contact,
+      metaMetadata: metaMetadata,
+    }),
+  )
 }
 
 async function parseMessageContent(

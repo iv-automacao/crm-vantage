@@ -5,13 +5,14 @@
 //
 // Cria e gerencia endpoints de webhook por conta. Quando um
 // cliente envia mensagem no WhatsApp, o CRM faz um POST para
-// cada endpoint ativo com o payload assinado via HMAC-SHA256.
+// cada endpoint ativo com um token estático no header (x-webhook-token),
+// validável pelo Header Auth do n8n.
 //
 // Segurança / UX
 //   - Só admin+ (Dono + Admins) enxerga e gerencia (espelha o
 //     gate server-side requireRole('admin')). Não-admin vê aviso.
-//   - O secret aparece UMA vez, no dialog de criação. Depois só o
-//     hash vive no banco — não há como reexibir.
+//   - O token aparece UMA vez (criação e após rotacionar); não há reexibição.
+//     Perdeu? Use Rotacionar pra gerar outro.
 //   - Deletar é imediato e irreversível.
 // ============================================================
 
@@ -20,6 +21,7 @@ import { toast } from 'sonner';
 import {
   AlertTriangle,
   Copy,
+  KeyRound,
   Loader2,
   Lock,
   Plus,
@@ -65,6 +67,70 @@ function fmtDate(iso: string): string {
   });
 }
 
+// Caixa de revelação do token — mostrada uma vez (na criação e após rotacionar).
+// Inclui o header e a instrução de Header Auth do n8n pra facilitar o setup.
+function SecretRevealBox({ secret }: { secret: string }) {
+  async function copy(text: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`${label} copiado`);
+    } catch {
+      toast.error('Área de transferência bloqueada — copie manualmente');
+    }
+  }
+  return (
+    <div className="space-y-3 py-2">
+      <div className="space-y-1">
+        <Label className="text-muted-foreground">Header</Label>
+        <div className="flex gap-2">
+          <Input
+            readOnly
+            value="x-webhook-token"
+            className="bg-muted border-border text-foreground font-mono text-xs"
+            onFocus={(e) => e.currentTarget.select()}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => copy('x-webhook-token', 'Header')}
+            className="border-border text-muted-foreground hover:bg-muted shrink-0"
+          >
+            <Copy className="size-4" />
+          </Button>
+        </div>
+      </div>
+      <div className="space-y-1">
+        <Label className="text-muted-foreground">Token</Label>
+        <div className="flex gap-2">
+          <Input
+            readOnly
+            value={secret}
+            className="bg-muted border-border text-foreground font-mono text-xs"
+            onFocus={(e) => e.currentTarget.select()}
+          />
+          <Button
+            type="button"
+            onClick={() => copy(secret, 'Token')}
+            className="bg-primary hover:bg-primary/90 text-primary-foreground shrink-0"
+          >
+            <Copy className="size-4" />
+            Copiar
+          </Button>
+        </div>
+      </div>
+      <div className="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+        No n8n: nó <strong className="text-foreground">Webhook</strong> → Authentication:{' '}
+        <strong className="text-foreground">Header Auth</strong> → crie a credencial com{' '}
+        Name = <code className="text-foreground">x-webhook-token</code> e Value = este token.
+      </div>
+      <div className="rounded-md border border-amber-500/50 bg-amber-500/15 px-3 py-2 text-xs text-amber-200">
+        <strong className="font-semibold text-amber-100">Salve este token agora.</strong>{' '}
+        Não guardamos o texto puro — pra trocar, use o botão Rotacionar.
+      </div>
+    </div>
+  );
+}
+
 export function WebhooksPanel() {
   const { canManageMembers } = useAuth();
 
@@ -83,6 +149,11 @@ export function WebhooksPanel() {
   // Estado do dialog de confirmação de exclusão
   const [deleting, setDeleting] = useState<WebhookEndpoint | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+
+  // Estado do dialog de confirmação de rotação + revelação do novo token
+  const [rotating, setRotating] = useState<WebhookEndpoint | null>(null);
+  const [rotateBusy, setRotateBusy] = useState(false);
+  const [rotatedSecret, setRotatedSecret] = useState<string | null>(null);
 
   // IDs com toggle em andamento (para desabilitar o botão)
   const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
@@ -200,13 +271,26 @@ export function WebhooksPanel() {
     }
   }
 
-  // Copia texto para a área de transferência
-  async function copy(text: string, label: string) {
+  // Rotaciona o token do endpoint via POST .../rotate
+  async function handleRotate() {
+    if (!rotating) return;
+    setRotateBusy(true);
     try {
-      await navigator.clipboard.writeText(text);
-      toast.success(`${label} copiado`);
-    } catch {
-      toast.error('Área de transferência bloqueada — copie manualmente');
+      const res = await fetch(`/api/account/webhooks/${rotating.id}/rotate`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        toast.error(payload.error || 'Falha ao rotacionar o token');
+        return;
+      }
+      const data = (await res.json()) as { secret: string };
+      setRotatedSecret(data.secret); // revela uma vez
+    } catch (err) {
+      console.error('[WebhooksPanel] rotate error:', err);
+      toast.error('Não foi possível conectar ao servidor');
+    } finally {
+      setRotateBusy(false);
     }
   }
 
@@ -314,6 +398,18 @@ export function WebhooksPanel() {
                       {ep.is_active ? 'Desativar' : 'Ativar'}
                     </Button>
 
+                    {/* Botão de rotacionar token */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setRotating(ep)}
+                      className="border-border text-muted-foreground hover:bg-muted"
+                      title="Gerar um token novo (invalida o atual)"
+                    >
+                      <KeyRound className="size-4" />
+                      Rotacionar
+                    </Button>
+
                     {/* Botão de exclusão */}
                     <Button
                       variant="outline"
@@ -355,34 +451,12 @@ export function WebhooksPanel() {
                   Webhook criado
                 </DialogTitle>
                 <DialogDescription className="text-muted-foreground">
-                  Copie o secret agora e configure-o no n8n para validar a assinatura HMAC.
-                  Por segurança, não guardamos o valor — assim que fechar, ele desaparece.
+                  Copie o token agora e configure-o no n8n (Header Auth). Por segurança,
+                  não guardamos o valor — assim que fechar, ele desaparece.
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="space-y-3 py-2">
-                <Label className="text-muted-foreground">Secret de assinatura</Label>
-                <div className="flex gap-2">
-                  <Input
-                    readOnly
-                    value={createdSecret}
-                    className="bg-muted border-border text-foreground font-mono text-xs"
-                    onFocus={(e) => e.currentTarget.select()}
-                  />
-                  <Button
-                    type="button"
-                    onClick={() => copy(createdSecret, 'Secret')}
-                    className="bg-primary hover:bg-primary/90 text-primary-foreground shrink-0"
-                  >
-                    <Copy className="size-4" />
-                    Copiar
-                  </Button>
-                </div>
-                <div className="rounded-md border border-amber-500/50 bg-amber-500/15 px-3 py-2 text-xs text-amber-200">
-                  <strong className="font-semibold text-amber-100">Salve este secret agora.</strong>{' '}
-                  Nunca armazenamos o texto puro — para trocar, exclua este webhook e crie outro.
-                </div>
-              </div>
+              <SecretRevealBox secret={createdSecret} />
 
               <DialogFooter className="bg-popover border-border">
                 <Button
@@ -499,6 +573,82 @@ export function WebhooksPanel() {
               )}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: rotacionar token (confirmação → revelação uma vez) */}
+      <Dialog
+        open={rotating !== null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setRotating(null);
+            setRotatedSecret(null);
+          }
+        }}
+      >
+        <DialogContent className="bg-popover border-border sm:max-w-md">
+          {rotatedSecret ? (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-popover-foreground">
+                  <KeyRound className="size-4 text-primary" />
+                  Token rotacionado
+                </DialogTitle>
+                <DialogDescription className="text-muted-foreground">
+                  O token antigo foi invalidado. Atualize o valor no n8n (Header Auth)
+                  com o novo token abaixo.
+                </DialogDescription>
+              </DialogHeader>
+              <SecretRevealBox secret={rotatedSecret} />
+              <DialogFooter className="bg-popover border-border">
+                <Button
+                  onClick={() => { setRotating(null); setRotatedSecret(null); }}
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                >
+                  Concluir
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-popover-foreground">
+                  <AlertTriangle className="size-4 text-amber-400" />
+                  Rotacionar token
+                </DialogTitle>
+                <DialogDescription className="text-muted-foreground">
+                  Gera um token novo para{' '}
+                  <span className="font-medium text-muted-foreground break-all">
+                    {rotating?.url}
+                  </span>{' '}
+                  e invalida o atual. O n8n para de validar até você atualizar o token lá.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="bg-popover border-border">
+                <Button
+                  variant="outline"
+                  onClick={() => setRotating(null)}
+                  className="border-border text-muted-foreground hover:bg-muted"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={handleRotate}
+                  disabled={rotateBusy}
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                >
+                  {rotateBusy ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      Rotacionando...
+                    </>
+                  ) : (
+                    'Rotacionar token'
+                  )}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </section>

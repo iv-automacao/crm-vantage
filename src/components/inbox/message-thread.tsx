@@ -23,6 +23,7 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  Bot,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -192,6 +193,13 @@ export function MessageThread({
     }, 700);
   }, [isRefreshing, onRefresh]);
   const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
+
+  // Pausa do bot do agente nesta conversa (otimista; espelha conversations.bot_paused).
+  const [botPaused, setBotPaused] = useState<boolean>(conversation?.bot_paused ?? false);
+
+  useEffect(() => {
+    setBotPaused(conversation?.bot_paused ?? false);
+  }, [conversation?.id, conversation?.bot_paused]);
 
   // Profiles are bounded by RLS to rows the current user is allowed to
   // see — today that's just the current user, but the dropdown keeps the
@@ -573,6 +581,22 @@ export function MessageThread({
     [conversation, onStatusChange]
   );
 
+  // Alterna bot_paused na conversa: update otimista + rollback em caso de erro.
+  const handleToggleBot = useCallback(async () => {
+    if (!conversation) return;
+    const next = !botPaused;
+    setBotPaused(next); // otimista
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("conversations")
+      .update({ bot_paused: next })
+      .eq("id", conversation.id);
+    if (error) {
+      setBotPaused(!next); // rollback
+      toast.error("Não foi possível alterar o bot.");
+    }
+  }, [conversation, botPaused]);
+
   const handleOpenTemplates = useCallback(() => {
     setTemplateModalOpen(true);
   }, []);
@@ -879,6 +903,24 @@ export function MessageThread({
               )}
             </button>
           )}
+
+          {/* Pausar/ativar o bot do agente nesta conversa. Pausado → o n8n
+              recebe o webhook com state.bot_paused:true e decide não
+              responder, deixando o atendimento pro humano. */}
+          <button
+            type="button"
+            onClick={handleToggleBot}
+            aria-pressed={botPaused}
+            aria-label={botPaused ? "Ativar bot nesta conversa" : "Pausar bot nesta conversa"}
+            title={botPaused ? "Bot pausado — clique pra reativar" : "Bot ativo — clique pra pausar"}
+            className={cn(
+              "inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs transition-colors hover:bg-muted",
+              botPaused ? "text-amber-500" : "text-primary",
+            )}
+          >
+            <Bot className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">{botPaused ? "Bot pausado" : "Bot ativo"}</span>
+          </button>
 
           {/* Manual refresh — forces a refetch of the messages + the
               conversation list (the parent bumps its resyncToken). Useful

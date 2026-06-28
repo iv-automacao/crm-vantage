@@ -4,8 +4,9 @@
 //
 // Restrito a admin+ via requireRole('admin').
 // O secret cru só existe na resposta do POST — depois disso, só o
-// valor em `webhook_endpoints.secret` vive no banco (usado pra assinar
-// payloads na entrega). Espelha o padrão de /api/account/api-keys.
+// valor em `webhook_endpoints.secret` vive no banco (enviado como token
+// estático no header `x-webhook-token` na entrega). Espelha o padrão de
+// /api/account/api-keys.
 // ============================================================
 
 import { NextResponse } from "next/server";
@@ -56,10 +57,10 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => null);
     const url = typeof body?.url === "string" ? body.url.trim() : "";
 
-    // Validação da URL: obrigatória, deve ser http(s).
+    // Validação da URL: obrigatória, deve ser http(s) com host público.
     if (!isValidWebhookUrl(url)) {
       return NextResponse.json(
-        { error: "URL inválida — informe uma URL começando com http:// ou https://" },
+        { error: "URL inválida — use http(s) com host público (localhost/IPs internos são bloqueados)" },
         { status: 400 },
       );
     }
