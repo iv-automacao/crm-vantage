@@ -15,6 +15,9 @@ import {
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils'
 import { supabaseAdmin } from './admin-client'
+import { buildConversationContext } from '@/lib/webhooks/enrich'
+import { buildMessageEventPayload, dispatchMessageEvent } from '@/lib/webhooks/dispatch'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 // ------------------------------------------------------------
 // Flows-side Meta sender (interactive variants).
@@ -30,6 +33,59 @@ import { supabaseAdmin } from './admin-client'
 // brings the flow runner online and wires it up. Shipping it now
 // keeps the foundation PR self-contained and unit-testable.
 // ------------------------------------------------------------
+
+// ------------------------------------------------------------
+// Helper local: espelha um envio do flow pro n8n como message.sent
+// (sender bot/flow). Best-effort — NUNCA lança (não pode derrubar o
+// runner). Compartilhado pelas 3 funções de envio deste arquivo (DRY).
+//
+// INTENCIONALMENTE SÍNCRONO (await): o flow runner já roda dentro do
+// after() do inbound (pós-resposta), então NÃO precisa (nem pode) usar
+// after() de novo aqui — `after()` é primitiva de request handler, e
+// este código não está num. Só as 2 ROTAS de envio (send-message.ts via
+// whatsapp/send e v1/messages/send) usam after(). O try/catch nunca
+// propaga — derrubar o runner por causa do espelho não é aceitável.
+// ------------------------------------------------------------
+async function dispatchFlowSent(args: {
+  db: SupabaseClient
+  accountId: string
+  conversationId: string
+  contact: { id: string; phone: string }
+  userId: string
+  message: {
+    id: string | null
+    whatsapp_message_id: string
+    content_type: string
+    content_text: string | null
+    created_at: string | null
+  }
+}): Promise<void> {
+  try {
+    const context = await buildConversationContext(
+      args.db,
+      args.accountId,
+      args.conversationId,
+      args.contact.id,
+    )
+    await dispatchMessageEvent(
+      args.db,
+      args.accountId,
+      buildMessageEventPayload({
+        event: 'message.sent',
+        direction: 'out',
+        accountId: args.accountId,
+        conversationId: args.conversationId,
+        // sender.type:'bot' — flow não é humano. actor_id = userId (string).
+        sender: { type: 'bot', via: 'flow', actor_id: args.userId, actor_name: null, api_key_id: null },
+        contact: { id: args.contact.id, phone: args.contact.phone, name: null },
+        context,
+        message: args.message,
+      }),
+    )
+  } catch (e) {
+    console.warn('[webhooks] outbound flow falhou:', e instanceof Error ? e.message : e)
+  }
+}
 
 interface SendTextEngineArgs {
   /** Account-level tenancy key. Drives contact + whatsapp_config
@@ -120,14 +176,18 @@ export async function engineSendText(
     await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)
   }
 
-  const { error: msgErr } = await db.from('messages').insert({
-    conversation_id: args.conversationId,
-    sender_type: 'bot',
-    content_type: 'text',
-    content_text: args.text,
-    message_id: waMessageId,
-    status: 'sent',
-  })
+  const { data: messageRecord, error: msgErr } = await db
+    .from('messages')
+    .insert({
+      conversation_id: args.conversationId,
+      sender_type: 'bot',
+      content_type: 'text',
+      content_text: args.text,
+      message_id: waMessageId,
+      status: 'sent',
+    })
+    .select('id, created_at')
+    .single()
   if (msgErr) {
     throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`)
   }
@@ -140,6 +200,21 @@ export async function engineSendText(
       updated_at: new Date().toISOString(),
     })
     .eq('id', args.conversationId)
+
+  await dispatchFlowSent({
+    db,
+    accountId: args.accountId,
+    conversationId: args.conversationId,
+    contact: { id: contact.id, phone: contact.phone },
+    userId: args.userId,
+    message: {
+      id: messageRecord?.id ?? null,
+      whatsapp_message_id: waMessageId,
+      content_type: 'text',
+      content_text: args.text,
+      created_at: messageRecord?.created_at ?? null,
+    },
+  })
 
   return { whatsapp_message_id: waMessageId }
 }
@@ -237,14 +312,18 @@ export async function engineSendMedia(
   // content_text carries the caption (or empty) so the conversation
   // list preview shows something meaningful when the user glances at it.
   const preview = args.caption?.trim() || `[${args.kind}]`
-  const { error: msgErr } = await db.from('messages').insert({
-    conversation_id: args.conversationId,
-    sender_type: 'bot',
-    content_type: args.kind,
-    content_text: args.caption ?? null,
-    message_id: waMessageId,
-    status: 'sent',
-  })
+  const { data: messageRecord, error: msgErr } = await db
+    .from('messages')
+    .insert({
+      conversation_id: args.conversationId,
+      sender_type: 'bot',
+      content_type: args.kind,
+      content_text: args.caption ?? null,
+      message_id: waMessageId,
+      status: 'sent',
+    })
+    .select('id, created_at')
+    .single()
   if (msgErr) {
     throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`)
   }
@@ -257,6 +336,21 @@ export async function engineSendMedia(
       updated_at: new Date().toISOString(),
     })
     .eq('id', args.conversationId)
+
+  await dispatchFlowSent({
+    db,
+    accountId: args.accountId,
+    conversationId: args.conversationId,
+    contact: { id: contact.id, phone: contact.phone },
+    userId: args.userId,
+    message: {
+      id: messageRecord?.id ?? null,
+      whatsapp_message_id: waMessageId,
+      content_type: args.kind,
+      content_text: args.caption ?? null,
+      created_at: messageRecord?.created_at ?? null,
+    },
+  })
 
   return { whatsapp_message_id: waMessageId }
 }
@@ -409,14 +503,18 @@ async function sendInteractiveViaMeta(
   // We do NOT set interactive_reply_id here — that column is reserved
   // for the customer's tap on this message, populated by the webhook
   // when their reply arrives.
-  const { error: msgErr } = await db.from('messages').insert({
-    conversation_id: input.conversationId,
-    sender_type: 'bot',
-    content_type: 'interactive',
-    content_text: input.bodyText,
-    message_id: waMessageId,
-    status: 'sent',
-  })
+  const { data: messageRecord, error: msgErr } = await db
+    .from('messages')
+    .insert({
+      conversation_id: input.conversationId,
+      sender_type: 'bot',
+      content_type: 'interactive',
+      content_text: input.bodyText,
+      message_id: waMessageId,
+      status: 'sent',
+    })
+    .select('id, created_at')
+    .single()
   if (msgErr) {
     throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`)
   }
@@ -429,6 +527,21 @@ async function sendInteractiveViaMeta(
       updated_at: new Date().toISOString(),
     })
     .eq('id', input.conversationId)
+
+  await dispatchFlowSent({
+    db,
+    accountId: input.accountId,
+    conversationId: input.conversationId,
+    contact: { id: contact.id, phone: contact.phone },
+    userId: input.userId,
+    message: {
+      id: messageRecord?.id ?? null,
+      whatsapp_message_id: waMessageId,
+      content_type: 'interactive',
+      content_text: input.bodyText,
+      created_at: messageRecord?.created_at ?? null,
+    },
+  })
 
   return { whatsapp_message_id: waMessageId }
 }
