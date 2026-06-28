@@ -6,6 +6,11 @@ import { decryptCapiToken } from './crypto'
 
 export const MAX_CAPI_ATTEMPTS = 5
 
+// TTL do claim: uma linha "em voo" volta elegível depois disso, recuperando
+// linhas presas por crash no meio do envio (reaper embutido). Reusado no
+// resend manual pra recusar reenfileiramento de linha ainda em processamento.
+export const CAPI_CLAIM_TTL_MS = 5 * 60 * 1000
+
 export interface CapiDispatchResult {
   processed: number
   sent: number
@@ -24,9 +29,9 @@ async function resolveWabaId(admin: SupabaseClient, accountId: string): Promise<
 }
 
 /**
- * Busca eventos pending/failed (dentro do teto de tentativas), resolve
- * credenciais e ctwa_clid, envia pra Meta e atualiza o status de cada linha.
- * Best-effort: falha num evento não interrompe o lote.
+ * Busca eventos pending/failed (dentro do teto de tentativas), faz o claim
+ * atômico de cada linha, resolve credenciais e ctwa_clid, envia pra Meta e
+ * atualiza o status. Best-effort: falha num evento não interrompe o lote.
  */
 export async function processPendingCapiEvents(
   admin: SupabaseClient,
@@ -45,8 +50,25 @@ export async function processPendingCapiEvents(
   if (!events?.length) return result
 
   for (const ev of events as Array<Record<string, unknown>>) {
-    result.processed++
     const id = ev.id as string
+
+    // 0. Claim atômico (compare-and-set): só uma execução fica com a linha.
+    //    Sob READ COMMITTED, um 2º UPDATE concorrente re-avalia o predicado
+    //    pós-commit do 1º e não casa (claimed_at recente) → 0 linhas → pula.
+    //    claimed_at expira em CAPI_CLAIM_TTL_MS, então linha presa por crash
+    //    volta elegível sozinha.
+    const cutoff = new Date(Date.now() - CAPI_CLAIM_TTL_MS).toISOString()
+    const { data: claimed } = await admin
+      .from('capi_events')
+      .update({ claimed_at: new Date().toISOString() })
+      .eq('id', id)
+      .in('status', ['pending', 'failed'])
+      .or(`claimed_at.is.null,claimed_at.lt.${cutoff}`)
+      .select('id')
+      .maybeSingle()
+    if (!claimed) continue // já pego por outra execução (ou em voo) → pula
+
+    result.processed++
 
     // 1. Config da conta — sem CAPI ativo (dataset_id ou access_token ausentes),
     //    marca como skipped e segue pro próximo.
@@ -110,7 +132,8 @@ export async function processPendingCapiEvents(
         .eq('id', id)
       result.sent++
     } else {
-      // Falha best-effort — registra o erro HTTP e incrementa tentativas.
+      // Falha best-effort — registra o erro HTTP, incrementa tentativas e
+      // libera o claim (claimed_at:null) pra a linha voltar elegível.
       await admin
         .from('capi_events')
         .update({
@@ -118,6 +141,7 @@ export async function processPendingCapiEvents(
           attempts,
           meta_response: resp.body,
           last_error: `http_${resp.status}`,
+          claimed_at: null,
         })
         .eq('id', id)
       result.failed++
