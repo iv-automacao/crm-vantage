@@ -25,6 +25,41 @@ function makeAdmin(responses: Record<string, { data: unknown; error: unknown }>)
   return { from } as unknown as SupabaseClient
 }
 
+// ── Fábrica com respostas sequenciais por tabela ──────────────────────────────
+// Permite que a MESMA tabela devolva respostas diferentes em chamadas sucessivas.
+// Útil para testar o ramo de fallback do Bloco 3 (deals): 1ª chamada por
+// conversation_id → null; 2ª chamada por contact_id → o deal real.
+// Assim, remover o fallback no código quebraria este teste.
+function makeAdminSequential(
+  staticResponses: Record<string, { data: unknown; error: unknown }>,
+  sequentialResponses: Record<string, Array<{ data: unknown; error: unknown }>>,
+) {
+  // Contador de chamadas por tabela (para respostas sequenciais)
+  const callCount: Record<string, number> = {}
+
+  function builderFor(table: string) {
+    const builder: Record<string, unknown> = {}
+    const chain = () => builder
+    for (const m of ['select', 'eq', 'is', 'order', 'limit']) builder[m] = vi.fn(chain)
+
+    builder.maybeSingle = vi.fn(async () => {
+      if (sequentialResponses[table]) {
+        // Tabela com respostas sequenciais: pega a próxima da fila (ou a última se esgotou)
+        callCount[table] = (callCount[table] ?? 0)
+        const idx = Math.min(callCount[table], sequentialResponses[table].length - 1)
+        callCount[table]++
+        return sequentialResponses[table][idx]
+      }
+      return staticResponses[table] ?? { data: null, error: null }
+    })
+    builder.single = builder.maybeSingle
+    return builder
+  }
+
+  const from = vi.fn((table: string) => builderFor(table))
+  return { from } as unknown as SupabaseClient
+}
+
 describe('emptyConversationContext', () => {
   it('retorna um esqueleto seguro (tudo vazio/null/false)', () => {
     const ctx = emptyConversationContext()
@@ -141,28 +176,42 @@ describe('buildConversationContext', () => {
   })
 
   it('deal sem conversation_id (criado na UI por contato) → fallback por contact_id', async () => {
-    // O 1º lookup (por conversation_id) volta vazio; o fallback (por contact_id)
-    // traz o deal. Como o mock roteia só por tabela, `deals` responde nos dois
-    // lookups; aqui validamos que o deal é montado a partir da resposta da tabela.
-    const admin = makeAdmin({
-      contacts: { data: { ctwa_clid: null, referral: null, contact_tags: [], contact_custom_values: [] }, error: null },
-      conversations: {
-        data: { status: 'open', bot_paused: false, assigned_agent_id: null, unread_count: 0, last_message_at: null, autoassign_waiting: false, created_at: null },
-        error: null,
-      },
-      deals: {
-        data: {
-          id: 'deal-9',
-          title: 'Negócio do contato',
-          value: 1000,
-          currency: 'BRL',
-          status: 'active',
-          pipelines: { name: 'Pós-venda' },
-          pipeline_stages: { name: 'Aberto' },
+    // O 1º lookup de deals (por conversation_id) devolve null; o código DEVE
+    // entrar no ramo de fallback e fazer o 2º lookup (por contact_id).
+    // Usamos makeAdminSequential para que `deals` responda de forma DIFERENTE nas
+    // duas chamadas — 1ª: vazio; 2ª: o deal real. Isso garante que o teste só
+    // passa se o Bloco 3 REALMENTE executar o fallback: remover o fallback do
+    // código quebraria este teste (ctx.deal ficaria null).
+    const admin = makeAdminSequential(
+      // Respostas estáticas para tabelas sem sequência
+      {
+        contacts: { data: { ctwa_clid: null, referral: null, contact_tags: [], contact_custom_values: [] }, error: null },
+        conversations: {
+          data: { status: 'open', bot_paused: false, assigned_agent_id: null, unread_count: 0, last_message_at: null, autoassign_waiting: false, created_at: null },
+          error: null,
         },
-        error: null,
       },
-    })
+      // Respostas sequenciais para `deals`:
+      //   chamada 0 → por conversation_id → vazio (nenhum deal vinculado à conversa)
+      //   chamada 1 → por contact_id     → deal real (fallback buscou pelo contato)
+      {
+        deals: [
+          { data: null, error: null },
+          {
+            data: {
+              id: 'deal-9',
+              title: 'Negócio do contato',
+              value: 1000,
+              currency: 'BRL',
+              status: 'active',
+              pipelines: { name: 'Pós-venda' },
+              pipeline_stages: { name: 'Aberto' },
+            },
+            error: null,
+          },
+        ],
+      },
+    )
 
     const ctx = await buildConversationContext(admin, 'acc1', 'conv1', 'c1')
 

@@ -193,6 +193,10 @@ export async function buildConversationContext(
         .maybeSingle()
       if (!error && data && typeof (data as { full_name?: unknown }).full_name === 'string') {
         result.state.assigned_agent_name = (data as { full_name: string }).full_name
+      } else if (!error && !data) {
+        // Tem agente atribuído mas o profile não foi encontrado (sem erro de query).
+        // Provavelmente user_id desincronizado ou profile deletado — diagnóstico.
+        console.warn('[enrich] agente sem profile:', result.state.assigned_agent_id)
       }
     } catch (e) {
       console.warn('[enrich] nome do agente lançou:', e instanceof Error ? e.message : e)
