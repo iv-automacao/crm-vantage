@@ -56,10 +56,10 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => null);
     const url = typeof body?.url === "string" ? body.url.trim() : "";
 
-    // Validação da URL: obrigatória, deve ser http(s).
+    // Validação da URL: obrigatória, deve ser http(s) com host público.
     if (!isValidWebhookUrl(url)) {
       return NextResponse.json(
-        { error: "URL inválida — informe uma URL começando com http:// ou https://" },
+        { error: "URL inválida — use http(s) com host público (localhost/IPs internos são bloqueados)" },
         { status: 400 },
       );
     }
