@@ -50,6 +50,10 @@ export const POST = defineRoute({
       template_params: body.template_params,
       template_message_params: body.template_message_params,
       reply_to_message_id: body.reply_to_message_id,
+      // Origem: agente externo (n8n) via API key. api_key_id permite o n8n
+      // filtrar os PRÓPRIOS envios e não entrar em loop. actor_name fica null
+      // (ApiKeyContext não carrega o nome da chave — escopo enxuto).
+      source: { via: 'api', actor_id: apiKeyId, actor_name: null, api_key_id: apiKeyId },
     })
 
     if (!result.ok) {

@@ -36,6 +36,9 @@ import {
 } from '@/lib/whatsapp/phone-utils'
 import type { MessageTemplate } from '@/types'
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
+import { after } from 'next/server'
+import { buildConversationContext } from '@/lib/webhooks/enrich'
+import { buildMessageEventPayload, dispatchMessageEvent } from '@/lib/webhooks/dispatch'
 
 const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const
 const VALID_MESSAGE_TYPES = ['text', 'template', ...MEDIA_KINDS] as const
@@ -55,6 +58,15 @@ export interface SendMessageInput {
   template_params?: unknown[]
   template_message_params?: unknown
   reply_to_message_id?: string
+  /** Origem do envio — usada pra montar o bloco `sender` do webhook
+   *  message.sent. Opcional: se ausente, o disparo outbound é pulado
+   *  (ex.: callers internos que não querem espelhar pro n8n). */
+  source?: {
+    via: 'inbox' | 'api'
+    actor_id?: string | null
+    actor_name?: string | null
+    api_key_id?: string | null
+  }
 }
 
 export type SendMessageResult =
@@ -82,6 +94,7 @@ export async function sendMessageToConversation(
     template_params,
     template_message_params,
     reply_to_message_id,
+    source,
   } = input
 
   if (!conversation_id || !message_type) {
@@ -342,6 +355,66 @@ export async function sendMessageToConversation(
     }
   } catch (err) {
     console.error('[flows] pause-on-agent-send threw:', err instanceof Error ? err.message : err)
+  }
+
+  // Webhook outbound (best-effort, NÃO-bloqueante): espelha o envio pro n8n
+  // como message.sent. Só dispara quando o caller informa `source` (inbox/api).
+  // RODA EM after(): pós-resposta do envio, fora do caminho crítico — não
+  // adiciona latência ao 200 (diferente de um await aqui, que somaria até ~10s
+  // do timeout do fetch). As 2 rotas que chamam esta função são request
+  // handlers, então after() é válido e executa depois de responder.
+  // Usa o client ADMIN pro lookup de endpoints/enrich — o client de sessão
+  // pode não enxergar webhook_endpoints via RLS (mesmo padrão do inbound).
+  // sender.type: inbox = humano respondendo (agent); api = agente n8n (bot).
+  // NUNCA derruba o envio: dispatch e enrich são best-effort/nunca-lançam, e
+  // o try/catch aqui é defesa extra (após o 200 já enviado).
+  if (source) {
+    // Captura os valores necessários ANTES do after() (escopo do callback).
+    const senderType: 'agent' | 'bot' = source.via === 'inbox' ? 'agent' : 'bot'
+    const sentMessage = {
+      id: messageRecord.id,
+      whatsapp_message_id: waMessageId,
+      content_type: messageRecord.content_type ?? message_type,
+      content_text: messageRecord.content_text ?? content_text ?? null,
+      created_at: messageRecord.created_at ?? null,
+    }
+    after(async () => {
+      try {
+        const admin = supabaseAdmin()
+        const context = await buildConversationContext(
+          admin,
+          accountId,
+          conversation_id,
+          contact.id,
+        )
+        await dispatchMessageEvent(
+          admin,
+          accountId,
+          buildMessageEventPayload({
+            event: 'message.sent',
+            direction: 'out',
+            accountId,
+            conversationId: conversation_id,
+            sender: {
+              type: senderType,
+              via: source.via,
+              actor_id: source.actor_id ?? null,
+              actor_name: source.actor_name ?? null,
+              api_key_id: source.api_key_id ?? null,
+            },
+            contact: {
+              id: contact.id,
+              phone: contact.phone,
+              name: contact.name ?? null,
+            },
+            context,
+            message: sentMessage,
+          }),
+        )
+      } catch (e) {
+        console.warn('[webhooks] outbound message.sent falhou:', e instanceof Error ? e.message : e)
+      }
+    })
   }
 
   return { ok: true, message_id: messageRecord.id, whatsapp_message_id: waMessageId }

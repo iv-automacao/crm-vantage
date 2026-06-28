@@ -197,13 +197,21 @@ describe('POST /api/v1/messages/send — happy path', () => {
     expect(respBody.message_id).toBe('msg-abc-123')
     expect(respBody.whatsapp_message_id).toBe('wamid.xyz')
 
-    // Verifica que sendMessageToConversation foi chamado com os campos corretos.
+    // Verifica que sendMessageToConversation foi chamado com os campos corretos
+    // E com o bloco `source` da API (via:'api', actor_id/api_key_id = apiKeyId)
+    // — é o que o n8n usa pra filtrar os próprios envios (anti-loop).
     expect(sendMessageMod.sendMessageToConversation).toHaveBeenCalledWith(
       expect.objectContaining({
         accountId: fakeApiKeyCtx.accountId,
         conversation_id: VALID_UUID,
         message_type: 'text',
         content_text: 'Olá, teste!',
+        source: {
+          via: 'api',
+          actor_id: fakeApiKeyCtx.apiKeyId,
+          actor_name: null,
+          api_key_id: fakeApiKeyCtx.apiKeyId,
+        },
       }),
     )
   })

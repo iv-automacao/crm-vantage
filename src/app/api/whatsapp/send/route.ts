@@ -37,6 +37,8 @@ export async function POST(request: Request) {
       template_params: body.template_params,
       template_message_params: body.template_message_params,
       reply_to_message_id: body.reply_to_message_id,
+      // Origem: humano respondendo pela inbox. actor_id = userId da sessão.
+      source: { via: 'inbox', actor_id: ctx.userId, actor_name: null, api_key_id: null },
     })
 
     if (!result.ok) {
