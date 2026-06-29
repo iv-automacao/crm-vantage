@@ -12,6 +12,7 @@
 
 **✅ FEITO — no ar em produção** (`crm.vantagemanaus.com.br`):
 - **#1 (P0) Idempotência do inbound** — `UNIQUE` parcial em `messages.message_id` (migration 036, aplicada/verificada) + gate `23505` no webhook → reentrega da Meta vira no-op. (PR #23)
+- **#2 (P1) CAPI duplo-envio** — claim atômico por linha (`UPDATE ... claimed_at WHERE status IN (pending,failed) AND claimed_at IS NULL/expirado RETURNING`) com TTL de 5min auto-expirável (reaper embutido) + resend guard (409 se `pending`/em-voo). Migration 037 (`claimed_at`) aplicada. (PR #25)
 - **#3 (P1) SSRF nos webhooks de saída** — `isValidWebhookUrl` bloqueia loopback/privado/link-local/metadata + IPv4-mapped `::ffff:`; `redirect:'manual'` + timeout no dispatch **e** na ação `send_webhook`; validação no cadastro. (PR #23)
 - **Extra (mesma área, fora da lista original):** feed do agente n8n (payload `state`, **Pausar bot**), **token estático** `x-webhook-token` + **Rotacionar**, e **webhook bidirecional** (`message.sent`, `direction`, `sender`, enriquecimento: tags/deal/agente/CTWA/timestamp) — PRs #23 + #24 + filtro anti-loop no n8n (`vantage-crm-agente`).
 
@@ -21,18 +22,17 @@
 - **#12 (P3)** — `signature.ts` (HMAC outbound) removido; mas o **token CAPI/WhatsApp legado em texto plano** ainda é tolerado (sem job de migração forçada).
 
 **⬜ BACKLOG ABERTO — próximos (ordem sugerida pra retomar):**
-1. **#2 (P1) CAPI duplo-envio** — fila sem claim atômico (`SELECT pending → POST → UPDATE sent`) + `resend` sem guard de status nem rate limit. Aplicar o padrão de claim atômico que já existe no repo (`automation_pending`).
-2. **#4 (P1) `automations/[id]` tenancy** — service-role + filtro só `user_id` conflita com a RLS account-scoped (admin não gerencia automação de colega; method drift no GET).
-3. **#5 (P2) divergência dos 3 caminhos de envio** — broadcast v1 não persiste nada; APPROVED só no v1; sem idempotência; flow-pause/auto-correção só no 1:1.
-4. **#7 (P2) gate de aprovação furado** — GET de flows/automations usa `getUser()` cru (conta pending/suspended lê).
-5. **#8 (P2) `media/[mediaId]`** — sem checagem de posse da mídia + sem rate limit (qualquer role).
-6. **#6 (P2)** — cursor do rodízio incondicional + remover a `030` com 15min (fonte única da janela).
-7. **#9 (P2)** — contadores atômicos (RPC `increment`).
-8. **#10 (P3)** — robustez dos crons (reaper de `running` órfão; `maxDuration`; backoff CAPI).
-9. **#11 (P3)** — rate limit no `resend` CAPI + cobertura em mutações de flows/automations.
-10. **#12 (P3)** — job de migração forçada dos tokens legados em texto plano.
+1. **#4 (P1) `automations/[id]` tenancy** — service-role + filtro só `user_id` conflita com a RLS account-scoped (admin não gerencia automação de colega; method drift no GET).
+2. **#5 (P2) divergência dos 3 caminhos de envio** — broadcast v1 não persiste nada; APPROVED só no v1; sem idempotência; flow-pause/auto-correção só no 1:1.
+3. **#7 (P2) gate de aprovação furado** — GET de flows/automations usa `getUser()` cru (conta pending/suspended lê).
+4. **#8 (P2) `media/[mediaId]`** — sem checagem de posse da mídia + sem rate limit (qualquer role).
+5. **#6 (P2)** — cursor do rodízio incondicional + remover a `030` com 15min (fonte única da janela).
+6. **#9 (P2)** — contadores atômicos (RPC `increment`).
+7. **#10 (P3)** — robustez dos crons (reaper de `running` órfão; `maxDuration`; backoff CAPI). *(Nota: o reaper do CAPI já saiu de graça no #2 via TTL do `claimed_at`.)*
+8. **#11 (P3)** — rate limit no `resend` CAPI + cobertura em mutações de flows/automations.
+9. **#12 (P3)** — job de migração forçada dos tokens legados em texto plano.
 
-> **Pra retomar (pós-/compact):** o próximo natural é o **#2 (CAPI duplo-envio)** — P1, padrão de claim já existe no repo. Cada item segue o mesmo fluxo do projeto: brainstorm → spec → plano → revisão adversarial → subagent-driven → PR. Specs/planos já entregues em `docs/superpowers/`. Migrations: **aplicação MANUAL** pelo Iago no SQL Editor (banco dedicado `mgmokvpjswtjxhqhnyps`).
+> **Pra retomar (pós-/compact):** o próximo natural é o **#4 (`automations/[id]` tenancy)** — P1. Cada item segue o mesmo fluxo do projeto: brainstorm → spec → plano → revisão adversarial → subagent-driven → PR. Specs/planos já entregues em `docs/superpowers/`. Migrations: **aplicação MANUAL** pelo Iago no SQL Editor (banco dedicado `mgmokvpjswtjxhqhnyps`).
 
 ---
 
