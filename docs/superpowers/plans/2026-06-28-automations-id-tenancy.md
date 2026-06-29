@@ -190,7 +190,9 @@ describe('PATCH /api/automations/[id]', () => {
   })
 
   it('403 quando requireRole rejeita (não-admin)', async () => {
-    requireRoleMock.mockRejectedValue(Object.assign(new Error('Forbidden'), { status: 403 }))
+    // mockRejectedValueOnce (não ...Value): com `clearMocks: true` + reset de
+    // mock único, a versão persistente vaza unhandled-rejection no Vitest 4.
+    requireRoleMock.mockRejectedValueOnce(Object.assign(new Error('Forbidden'), { status: 403 }))
     const res = await PATCH(
       new Request('http://x', { method: 'PATCH', body: JSON.stringify({ name: 'x' }) }),
       params(),
@@ -219,7 +221,7 @@ describe('DELETE /api/automations/[id]', () => {
 - [ ] **Step 2: Rodar o teste pra ver falhar (RED)**
 
 Run: `npx vitest run "src/app/api/automations/[id]/route.test.ts"`
-Expected: FALHA — a rota atual chama `supabaseAdmin()` (o mock-guard lança) e o GET usa `requireUser()`/`createClient` em vez de `requireActiveAccount`.
+Expected: FALHA — a rota ATUAL não usa `ctx.supabase`: o GET/PATCH/DELETE chamam `requireUser()` → `createClient()` → `cookies()` (o SSR client `@/lib/supabase/server` NÃO é mockado → "cookies() outside a request scope"), então os casos quebram. (O mock-guard de `supabaseAdmin` é proteção contra REGRESSÃO futura — só dispara se alguém reintroduzir service-role depois da reescrita; ele não é o driver do RED aqui.)
 
 - [ ] **Step 3: Reescrever a rota (GREEN)**
 
@@ -383,10 +385,10 @@ export async function DELETE(
 Run: `npx vitest run "src/app/api/automations/[id]/route.test.ts"`
 Expected: 6 PASS.
 
-- [ ] **Step 5: Typecheck**
+- [ ] **Step 5: Typecheck + lint**
 
-Run: `npx tsc --noEmit`
-Expected: sem erros.
+Run: `npx tsc --noEmit && npm run lint`
+Expected: `tsc` sem erros; lint sem novos problemas nos arquivos tocados (baseline 3 errors / ~25 problems pré-existentes; não mexer em warnings legados).
 
 - [ ] **Step 6: Commit**
 
@@ -526,7 +528,9 @@ describe('POST /api/automations/[id]/duplicate', () => {
   })
 
   it('403 quando requireRole rejeita', async () => {
-    requireRoleMock.mockRejectedValue(Object.assign(new Error('Forbidden'), { status: 403 }))
+    // mockRejectedValueOnce (não ...Value): com `clearMocks: true` + reset de
+    // mock único, a versão persistente vaza unhandled-rejection no Vitest 4.
+    requireRoleMock.mockRejectedValueOnce(Object.assign(new Error('Forbidden'), { status: 403 }))
     const res = await POST(new Request('http://x', { method: 'POST' }), params())
     expect(res.status).toBe(403)
   })
