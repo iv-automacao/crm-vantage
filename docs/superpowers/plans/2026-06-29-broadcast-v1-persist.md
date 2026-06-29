@@ -210,6 +210,34 @@ describe('sendBroadcast — configuração/template inválidos', () => {
   })
 })
 
+describe('sendBroadcast — segurança/comportamento preservados', () => {
+  it('filtra whatsapp_config e message_templates pelo account_id (scoping por tenant)', async () => {
+    vi.mocked(sendTemplateMessage).mockResolvedValue({ messageId: 'm' })
+    const eqCalls: Record<string, Array<[string, unknown]>> = {}
+    const ctx = makeCtx(OK_PERSIST, { eqCalls })
+    await sendBroadcast(ctx, { template_name: 'promo', template_language: 'pt_BR', recipients: [{ phone: '5592999999991' }] })
+    expect(eqCalls['whatsapp_config']).toContainEqual(['account_id', 'acct-test'])
+    expect(eqCalls['message_templates']).toContainEqual(['account_id', 'acct-test'])
+  })
+
+  it('descriptografa o access_token da config', async () => {
+    vi.mocked(sendTemplateMessage).mockResolvedValue({ messageId: 'm' })
+    const ctx = makeCtx(OK_PERSIST)
+    await sendBroadcast(ctx, { template_name: 'promo', template_language: 'pt_BR', recipients: [{ phone: '5592999999991' }] })
+    expect(decrypt).toHaveBeenCalledWith('encrypted-token')
+  })
+
+  it('faz retry de variante em erro "not allowed" e envia', async () => {
+    vi.mocked(sendTemplateMessage)
+      .mockRejectedValueOnce(new Error('Error 131030: not in allowed list'))
+      .mockResolvedValueOnce({ messageId: 'msg-variant' })
+    const ctx = makeCtx(OK_PERSIST)
+    const result = await sendBroadcast(ctx, { template_name: 'promo', template_language: 'pt_BR', recipients: [{ phone: '5592999999997' }] })
+    expect(vi.mocked(sendTemplateMessage).mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(result.results[0]).toMatchObject({ status: 'sent', whatsapp_message_id: 'msg-variant' })
+  })
+})
+
 describe('sendBroadcast — happy path + persistência', () => {
   it('envia para 2 destinatários e retorna sent=2, failed=0, broadcast_id', async () => {
     vi.mocked(sendTemplateMessage).mockResolvedValueOnce({ messageId: 'msg-1' }).mockResolvedValueOnce({ messageId: 'msg-2' })
@@ -358,6 +386,9 @@ async function persistRecipient(
   const broadcastId = (broadcast as { id: string }).id
 
   // 4) Best-effort: linka recipients a contatos existentes por telefone (sem criar).
+  //    Casa contacts.phone (esperado em E.164 sanitizado) com o telefone
+  //    sanitizado; se o contato estiver salvo em outro formato, fica null
+  //    (limitação consciente — ver "Fora de escopo" no spec).
   const sanitizedByOriginal = new Map<string, string>()
   for (const r of body.recipients) sanitizedByOriginal.set(r.phone, sanitizePhoneForMeta(r.phone))
   const contactIdByPhone = new Map<string, string>()
@@ -446,23 +477,23 @@ Expected: todos PASS (os mantidos + os novos de persistência).
 Run: `npx tsc --noEmit`
 Expected: sem erros.
 
-- [ ] **Step 7: Ajustar o teste da rota v1 se ele assertar o shape exato**
+- [ ] **Step 7: Atualizar a fixture do teste da rota v1 (tsc + shape)**
 
-Abrir `src/app/api/v1/broadcasts/route.test.ts`. Se algum `expect` comparar a resposta com `toEqual({ sent, failed, results })` (shape exato), trocar por `toMatchObject({ sent, failed, results })` (o `broadcast_id` é aditivo). Se já usa `toMatchObject`/checa campos individualmente, **não mexer**. Rodar:
+`BroadcastSendResult` ganhou `broadcast_id: string` **obrigatório** — então o mock de `sendBroadcast` em `src/app/api/v1/broadcasts/route.test.ts` quebra o `tsc` com **TS2345** (`Property 'broadcast_id' is missing`), porque a fixture `fakeBroadcastResult` passada a `vi.mocked(...).mockResolvedValue(...)` não tem o campo. Abrir o arquivo e:
+1. Adicionar `broadcast_id: 'bc-1'` ao objeto `fakeBroadcastResult` (a fixture do mock).
+2. Se algum `expect` comparar a resposta com `toEqual({ sent, failed, results })` (shape exato), trocar por `toMatchObject(...)` (o `broadcast_id` é aditivo). Se já checa campos individuais, deixar.
 
-Run: `npx vitest run "src/app/api/v1/broadcasts/route.test.ts"`
-Expected: PASS.
+Run: `npx vitest run "src/app/api/v1/broadcasts/route.test.ts" && npx tsc --noEmit`
+Expected: testes PASS e `tsc` sem erros (sem o TS2345).
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/lib/api/schemas/broadcasts.ts src/lib/broadcasts/api-service.ts src/lib/broadcasts/api-service.test.ts
+git add src/lib/api/schemas/broadcasts.ts src/lib/broadcasts/api-service.ts src/lib/broadcasts/api-service.test.ts "src/app/api/v1/broadcasts/route.test.ts"
 git commit -m "feat(broadcasts): v1 persiste broadcasts + recipients (status webhook/analytics) (#5)
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
-
-(Se o Step 7 tocou `route.test.ts`, incluir o caminho no `git add`.)
 
 ---
 
