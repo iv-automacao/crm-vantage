@@ -148,6 +148,15 @@ export async function POST(request: Request) {
         { status: 500 },
       )
     }
+    // Selo: não disparar template que a Meta não aprovou (consistente com o
+    // broadcast v1). Só quando temos a linha local — template não sincronizado
+    // segue como antes (a Meta valida no envio).
+    if (rawTemplateRow && rawTemplateRow.status !== 'APPROVED') {
+      return NextResponse.json(
+        { error: 'Template não está aprovado pela Meta.' },
+        { status: 422 },
+      )
+    }
     const templateRow = rawTemplateRow ?? null
 
     const results: BroadcastResult[] = []
