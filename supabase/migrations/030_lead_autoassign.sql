@@ -63,6 +63,9 @@ CREATE TRIGGER trg_autoassign_sync_pool
   FOR EACH ROW EXECUTE FUNCTION public.autoassign_sync_agent_pool();
 
 -- 4) Seleção atômica do rodízio -----------------------------------------
+-- ⚠️ SUPERSEDED pela migration 038 (assinatura de 2 args com p_conversation_id;
+--    janela canônica = 5min; cursor condicional). Esta versão (1 arg, 15min)
+--    fica órfã após o release do código novo — ver 038_round_robin_atomic.sql.
 -- Devolve o próximo agente disponível, avançando o cursor da conta na MESMA
 -- instrução, pra invocações concorrentes de webhook nunca colidirem.
 CREATE OR REPLACE FUNCTION public.pick_next_agent_round_robin(p_account_id UUID)

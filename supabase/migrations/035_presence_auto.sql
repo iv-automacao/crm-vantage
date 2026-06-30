@@ -33,6 +33,9 @@ END; $$;
 ALTER FUNCTION public.autoassign_sync_agent_pool() OWNER TO postgres;
 
 -- 3) Janela de presença do rodízio: 15min -> 5min -------------------------
+-- ⚠️ SUPERSEDED pela migration 038 (recria a função com a assinatura de 2 args
+--    p_conversation_id + cursor condicional). A janela canônica de 5min mora
+--    agora na 038. Esta assinatura de 1 arg fica órfã após o release.
 -- Espelha PRESENCE_WINDOW_MS em round-robin.ts. Predicado inalterado.
 CREATE OR REPLACE FUNCTION public.pick_next_agent_round_robin(p_account_id UUID)
 RETURNS UUID LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
