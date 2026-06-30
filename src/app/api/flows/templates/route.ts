@@ -1,34 +1,25 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { listFlowTemplates } from '@/lib/flows/templates'
+import { requireActiveAccount, toErrorResponse } from '@/lib/auth/account'
 
 /**
- * GET /api/flows/templates
- *
- * Returns the static template gallery (slug + name + description +
- * icon hint + node_count) so the New-flow dialog can render cards
- * without bundling the full template payloads client-side. Bodies
- * are fetched only on actual clone via POST /api/flows.
- *
- * Available to any signed-in user. Flows is in soft-GA.
+ * GET /api/flows/templates — galeria estática de templates (slug + name +
+ * description + icon + node_count) pro diálogo de novo flow. Exige conta
+ * ativa (sem leitura de banco — só o muro de aprovação).
  */
 export async function GET() {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  try {
+    await requireActiveAccount()
+    const templates = listFlowTemplates().map((t) => ({
+      slug: t.slug,
+      name: t.name,
+      description: t.description,
+      icon: t.icon,
+      trigger_type: t.trigger_type,
+      node_count: t.nodes.length,
+    }))
+    return NextResponse.json({ templates })
+  } catch (err) {
+    return toErrorResponse(err)
   }
-  // Shallow shape so the client gallery doesn't have to know about
-  // the full node tree.
-  const templates = listFlowTemplates().map((t) => ({
-    slug: t.slug,
-    name: t.name,
-    description: t.description,
-    icon: t.icon,
-    trigger_type: t.trigger_type,
-    node_count: t.nodes.length,
-  }))
-  return NextResponse.json({ templates })
 }

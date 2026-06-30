@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
-import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { requireActiveAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
 
 /**
  * GET   /api/flows/[id]  — fetch one flow with its nodes.
@@ -53,22 +53,23 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params
-  const guard = await requireOwnership(id)
-  if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
-  const { supabase } = guard
-
-  const [{ data: flow }, { data: nodes }] = await Promise.all([
-    supabase.from('flows').select('*').eq('id', id).maybeSingle(),
-    supabase
-      .from('flow_nodes')
-      .select('*')
-      .eq('flow_id', id)
-      .order('created_at', { ascending: true }),
-  ])
-  if (!flow) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  try {
+    const { supabase } = await requireActiveAccount()
+    const [{ data: flow }, { data: nodes }] = await Promise.all([
+      supabase.from('flows').select('*').eq('id', id).maybeSingle(),
+      supabase
+        .from('flow_nodes')
+        .select('*')
+        .eq('flow_id', id)
+        .order('created_at', { ascending: true }),
+    ])
+    if (!flow) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+    return NextResponse.json({ flow, nodes: nodes ?? [] })
+  } catch (err) {
+    return toErrorResponse(err)
   }
-  return NextResponse.json({ flow, nodes: nodes ?? [] })
 }
 
 interface PutBody {
