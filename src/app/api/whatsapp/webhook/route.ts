@@ -678,7 +678,7 @@ async function processMessage(
       .eq('account_id', accountId)
       .maybeSingle()
     if (autoassign?.is_active) {
-      const { agentId } = await assignNextAgent(supabaseAdmin(), accountId, contactRecord.id)
+      const { agentId } = await assignNextAgent(supabaseAdmin(), accountId, conversation.id)
       if (!agentId) {
         // Ninguém disponível → marca como aguardando (sinal pro ADM). O cron
         // atribui o lead mais antigo assim que alguém ficar disponível.

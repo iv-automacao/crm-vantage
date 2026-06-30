@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { pickIndex, isAvailableNow, onlineNow } from './round-robin'
+import { describe, it, expect, vi } from 'vitest'
+import { pickIndex, isAvailableNow, onlineNow, assignNextAgent } from './round-robin'
 
 // Data/hora fixa para todos os testes de disponibilidade
 const NOW = new Date('2026-06-25T12:00:00Z')
@@ -77,5 +77,60 @@ describe('isAvailableNow', () => {
   it('false quando last_activity_at é null', () => {
     const p = { in_pool: true, is_available: true, last_activity_at: null }
     expect(isAvailableNow(p, NOW)).toBe(false)
+  })
+})
+
+describe('assignNextAgent', () => {
+  const ACCOUNT = 'acc-1'
+  const CONVERSATION = 'conv-1'
+
+  // `db` fake: `.rpc` controlável; `.from` é um chainable no-op. A impl NOVA não
+  // deve chamar `.from` (a atribuição mora na RPC) — mas o chainable garante que,
+  // contra a impl ANTIGA, o teste RED falhe pela ASSERÇÃO e não por TypeError.
+  function fakeDb(rpcResult: { data?: unknown; error?: unknown }) {
+    const chain: Record<string, unknown> = {}
+    chain.update = vi.fn(() => chain)
+    chain.eq = vi.fn(() => chain)
+    chain.is = vi.fn(() => chain)
+    return {
+      rpc: vi.fn().mockResolvedValue(rpcResult),
+      from: vi.fn(() => chain),
+    }
+  }
+  type DbArg = Parameters<typeof assignNextAgent>[0]
+
+  // RED real (falham por asserção na impl atual):
+  it('chama a RPC com p_account_id E p_conversation_id', async () => {
+    const db = fakeDb({ data: 'agent-9' })
+    await assignNextAgent(db as unknown as DbArg, ACCOUNT, CONVERSATION)
+    expect(db.rpc).toHaveBeenCalledWith('pick_next_agent_round_robin', {
+      p_account_id: ACCOUNT,
+      p_conversation_id: CONVERSATION,
+    })
+  })
+
+  it('NÃO faz UPDATE separado em conversations (atribuição mora na RPC)', async () => {
+    const db = fakeDb({ data: 'agent-9' })
+    await assignNextAgent(db as unknown as DbArg, ACCOUNT, CONVERSATION)
+    expect(db.from).not.toHaveBeenCalled()
+  })
+
+  // Regression-guards (já verdes; travam o contrato de retorno):
+  it('retorna o agentId quando a RPC devolve um id', async () => {
+    const db = fakeDb({ data: 'agent-9' })
+    const res = await assignNextAgent(db as unknown as DbArg, ACCOUNT, CONVERSATION)
+    expect(res).toEqual({ agentId: 'agent-9' })
+  })
+
+  it('retorna agentId null quando a RPC devolve null (ninguém ou já atribuído)', async () => {
+    const db = fakeDb({ data: null })
+    const res = await assignNextAgent(db as unknown as DbArg, ACCOUNT, CONVERSATION)
+    expect(res).toEqual({ agentId: null })
+  })
+
+  it('retorna agentId null quando a RPC dá erro', async () => {
+    const db = fakeDb({ error: { message: 'boom' } })
+    const res = await assignNextAgent(db as unknown as DbArg, ACCOUNT, CONVERSATION)
+    expect(res).toEqual({ agentId: null })
   })
 })

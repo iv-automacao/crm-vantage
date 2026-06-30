@@ -86,7 +86,7 @@ export async function GET(request: Request) {
   let assigned = 0
   const { data: waiting } = await admin
     .from('conversations')
-    .select('id, account_id, contact_id')
+    .select('id, account_id')
     .eq('autoassign_waiting', true)
     .order('created_at', { ascending: true })
     .limit(100)
@@ -97,7 +97,7 @@ export async function GET(request: Request) {
       .eq('account_id', c.account_id as string)
       .maybeSingle()
     if (!s?.is_active) continue
-    const { agentId } = await assignNextAgent(admin, c.account_id as string, c.contact_id as string)
+    const { agentId } = await assignNextAgent(admin, c.account_id as string, c.id as string)
     if (agentId) assigned++
   }
 

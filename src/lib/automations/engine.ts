@@ -430,10 +430,15 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       const cfg = step.step_config as AssignConversationStepConfig
       if (!args.contactId) throw new Error('assign_conversation needs a contact')
 
-      // Rodízio real via RPC atômica do Postgres — substitui o stub anterior
+      // Rodízio real via RPC atômica do Postgres — atribui a conversa (por id)
+      // e avança o cursor só se colar (migration 038). Resolve o id da conversa
+      // pelo mesmo helper usado no send_template.
       if (cfg.mode === 'round_robin') {
-        const { agentId } = await assignNextAgent(db, args.automation.account_id, args.contactId)
-        return agentId ? `assigned to ${agentId} (round-robin)` : 'no agent available (round-robin)'
+        const conversationId = await resolveConversationId(args)
+        const { agentId } = await assignNextAgent(db, args.automation.account_id, conversationId)
+        return agentId
+          ? `assigned to ${agentId} (round-robin)`
+          : 'round-robin: nada a atribuir (sem agente livre ou já atribuído)'
       }
 
       // Modo específico: usa o agent_id configurado diretamente no passo
