@@ -16,6 +16,7 @@
 - **#3 (P1) SSRF nos webhooks de saída** — `isValidWebhookUrl` bloqueia loopback/privado/link-local/metadata + IPv4-mapped `::ffff:`; `redirect:'manual'` + timeout no dispatch **e** na ação `send_webhook`; validação no cadastro. (PR #23)
 - **#4 (P1) `automations/[id]` tenancy** — rotas usam o client de sessão RLS-scoped (`ctx.supabase`) em vez de service-role + filtro `user_id`; GET=`requireActiveAccount`, mutações=`requireRole('admin')`. Qualquer admin gerencia automação de colega; DELETE dá 404 real. Sem migration. (PR #26)
 - **#5 (P2) divergência dos caminhos de envio (Opção 1)** — o broadcast **v1 (API)** passou a persistir `broadcasts` + `broadcast_recipients` (com `whatsapp_message_id`, via service-role) → status webhook + analytics funcionam pro v1; a rota de broadcast **interna** rejeita 422 template não-APPROVED. Sem migration. Unificação total (tirar persistência do client hook) fica como follow-up. (PR #27)
+- **#7 (P2) gate de aprovação em GETs** — 5 GETs (listas de automations/flows + flows/[id]/runs/templates) trocaram `auth.getUser()` cru por `requireActiveAccount()` → conta `pending`/`suspended` toma 403 (mesmo client de sessão → zero mudança de escopo RLS). Mutações/helpers intocados. Sem migration. (PR #28). *Follow-up: `whatsapp/config` GET ainda usa getUser cru; e endurecer `route-auth-guard` quando todos os GETs crus migrarem.* (PR #28)
 - **Extra (mesma área, fora da lista original):** feed do agente n8n (payload `state`, **Pausar bot**), **token estático** `x-webhook-token` + **Rotacionar**, e **webhook bidirecional** (`message.sent`, `direction`, `sender`, enriquecimento: tags/deal/agente/CTWA/timestamp) — PRs #23 + #24 + filtro anti-loop no n8n (`vantage-crm-agente`).
 
 **⏳ PARCIAL:**
@@ -24,15 +25,14 @@
 - **#12 (P3)** — `signature.ts` (HMAC outbound) removido; mas o **token CAPI/WhatsApp legado em texto plano** ainda é tolerado (sem job de migração forçada).
 
 **⬜ BACKLOG ABERTO — próximos (ordem sugerida pra retomar):**
-1. **#7 (P2) gate de aprovação furado** — GET de flows/automations usa `getUser()` cru (conta pending/suspended lê).
-2. **#8 (P2) `media/[mediaId]`** — sem checagem de posse da mídia + sem rate limit (qualquer role).
-3. **#6 (P2)** — cursor do rodízio incondicional + remover a `030` com 15min (fonte única da janela).
-4. **#9 (P2)** — contadores atômicos (RPC `increment`).
-5. **#10 (P3)** — robustez dos crons (reaper de `running` órfão; `maxDuration`; backoff CAPI). *(Nota: o reaper do CAPI já saiu de graça no #2 via TTL do `claimed_at`.)*
-6. **#11 (P3)** — rate limit no `resend` CAPI + cobertura em mutações de flows/automations.
-7. **#12 (P3)** — job de migração forçada dos tokens legados em texto plano.
+1. **#8 (P2) `media/[mediaId]`** — sem checagem de posse da mídia + sem rate limit (qualquer role).
+2. **#6 (P2)** — cursor do rodízio incondicional + remover a `030` com 15min (fonte única da janela).
+3. **#9 (P2)** — contadores atômicos (RPC `increment`).
+4. **#10 (P3)** — robustez dos crons (reaper de `running` órfão; `maxDuration`; backoff CAPI). *(Nota: o reaper do CAPI já saiu de graça no #2 via TTL do `claimed_at`.)*
+5. **#11 (P3)** — rate limit no `resend` CAPI + cobertura em mutações de flows/automations.
+6. **#12 (P3)** — job de migração forçada dos tokens legados em texto plano.
 
-> **Pra retomar (pós-/compact):** o próximo natural é o **#7 (gate de aprovação furado em GETs)** — P2, e tem sinergia com o que já foi feito no #4 (mesmo padrão de gate). Cada item segue o mesmo fluxo do projeto: brainstorm → spec → plano → revisão adversarial → subagent-driven → PR. Specs/planos já entregues em `docs/superpowers/`. Migrations: **aplicação MANUAL** pelo Iago no SQL Editor (banco dedicado `mgmokvpjswtjxhqhnyps`).
+> **Pra retomar (pós-/compact):** o próximo natural é o **#8 (`media/[mediaId]` — posse + rate limit)** — P2. Cada item segue o mesmo fluxo do projeto: brainstorm → spec → plano → revisão adversarial → subagent-driven → PR. Specs/planos já entregues em `docs/superpowers/`. Migrations: **aplicação MANUAL** pelo Iago no SQL Editor (banco dedicado `mgmokvpjswtjxhqhnyps`).
 
 ---
 
