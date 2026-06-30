@@ -50,6 +50,7 @@ const fakeApiKeyCtx = {
 const fakeBroadcastResult = {
   sent: 2,
   failed: 0,
+  broadcast_id: 'bc-1',
   results: [
     { phone: '+5592999990001', status: 'sent' as const, whatsapp_message_id: 'wamid.001' },
     { phone: '+5592999990002', status: 'sent' as const, whatsapp_message_id: 'wamid.002' },

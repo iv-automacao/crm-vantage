@@ -39,6 +39,7 @@ export interface BroadcastSendResult {
   sent: number
   failed: number
   results: BroadcastRecipientResult[]
+  broadcast_id: string
 }
 
 // ─── Listagem de templates aprovados ─────────────────────────────────────────
@@ -57,6 +58,7 @@ export async function listApprovedTemplates(ctx: ApiServiceCtx): Promise<Templat
 
   if (error) throw error
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (data ?? []).map((t: any) => ({
     name: t.name,
     language: t.language,
@@ -68,6 +70,31 @@ export async function listApprovedTemplates(ctx: ApiServiceCtx): Promise<Templat
   }))
 }
 
+// ─── Helper best-effort de persistência de recipient ─────────────────────────
+
+// Grava uma linha de broadcast_recipients (best-effort: a mensagem já saiu,
+// um erro de tracking não deve derrubar o envio). contact_id é nullable.
+async function persistRecipient(
+  ctx: ApiServiceCtx,
+  broadcastId: string,
+  contactId: string | null,
+  messageId: string | null,
+  errorMessage: string | null,
+): Promise<void> {
+  try {
+    await ctx.admin.from('broadcast_recipients').insert({
+      broadcast_id: broadcastId,
+      contact_id: contactId,
+      status: messageId ? 'sent' : 'failed',
+      sent_at: messageId ? new Date().toISOString() : null,
+      whatsapp_message_id: messageId,
+      error_message: errorMessage,
+    })
+  } catch (e) {
+    console.error('[sendBroadcast] falha ao gravar recipient (best-effort):', e)
+  }
+}
+
 // ─── Envio de broadcast ───────────────────────────────────────────────────────
 
 /**
@@ -76,9 +103,10 @@ export async function listApprovedTemplates(ctx: ApiServiceCtx): Promise<Templat
  * Fluxo:
  * 1. Busca config do WhatsApp da conta — lança WhatsappNotConfiguredError (409) se ausente
  * 2. Valida que o template existe e está APPROVED — lança TemplateNotApprovedError (422) se não
- * 3. Fan-out: itera sobre destinatários com retry de variante de telefone
- *    - Erros por destinatário viram {status:'failed', error} — nunca derrubam o loop
- *    - Retry de variante só ocorre em isRecipientNotAllowedError
+ * 3. Cria a linha broadcasts — lança ApiError(500) se falhar (sem a linha, o analytics fica cego)
+ * 4. Best-effort: linka recipients a contatos por telefone
+ * 5. Fan-out: itera sobre destinatários com retry de variante de telefone
+ * 6. Finaliza o status do broadcast
  *
  * Nunca expõe o access token em logs ou mensagens de erro.
  */
@@ -118,18 +146,60 @@ export async function sendBroadcast(ctx: ApiServiceCtx, body: BroadcastSendBody)
     throw new ApiError(500, 'internal_error', 'Erro interno ao carregar o template.')
   }
 
-  // 3) Fan-out: itera sobre destinatários com retry de variante de telefone
+  // 3) Cria a linha broadcasts (rastreio). Falha alto: sem rastro, não envia.
+  const { data: broadcast, error: broadcastError } = await ctx.admin
+    .from('broadcasts')
+    .insert({
+      account_id: ctx.accountId,
+      user_id: ctx.auditUserId,
+      name: body.name ?? `API: ${body.template_name}`,
+      template_name: body.template_name,
+      template_language: body.template_language,
+      audience_filter: { type: 'api' },
+      status: 'sending',
+      total_recipients: body.recipients.length,
+    })
+    .select('id')
+    .single()
+  if (broadcastError || !broadcast) {
+    console.error('[sendBroadcast] falha ao criar broadcast:', (broadcastError as { message?: string })?.message)
+    throw new ApiError(500, 'internal_error', 'Erro interno ao registrar o broadcast.')
+  }
+  const broadcastId = (broadcast as { id: string }).id
+
+  // 4) Best-effort: linka recipients a contatos existentes por telefone (sem criar).
+  //    Casa contacts.phone (esperado em E.164 sanitizado) com o telefone
+  //    sanitizado; se o contato estiver salvo em outro formato, fica null
+  //    (limitação consciente — ver "Fora de escopo" no spec).
+  const sanitizedByOriginal = new Map<string, string>()
+  for (const r of body.recipients) sanitizedByOriginal.set(r.phone, sanitizePhoneForMeta(r.phone))
+  const contactIdByPhone = new Map<string, string>()
+  try {
+    const { data: contacts } = await ctx.admin
+      .from('contacts')
+      .select('id, phone')
+      .eq('account_id', ctx.accountId)
+      .in('phone', [...sanitizedByOriginal.values()])
+    for (const c of (contacts as Array<{ id: string; phone: string | null }> | null) ?? []) {
+      if (c.phone) contactIdByPhone.set(c.phone, c.id)
+    }
+  } catch (e) {
+    console.error('[sendBroadcast] lookup de contatos falhou (best-effort):', e)
+  }
+
+  // 5) Fan-out: envia + persiste cada destinatário.
   const results: BroadcastRecipientResult[] = []
   let sent = 0
   let failed = 0
 
   for (const r of body.recipients) {
-    const sanitized = sanitizePhoneForMeta(r.phone)
+    const sanitized = sanitizedByOriginal.get(r.phone) as string
+    const contactId = contactIdByPhone.get(sanitized) ?? null
 
-    // Valida formato E.164 antes de tentar o envio
     if (!isValidE164(sanitized)) {
       results.push({ phone: r.phone, status: 'failed', error: 'Telefone em formato inválido' })
       failed++
+      await persistRecipient(ctx, broadcastId, contactId, null, 'Telefone em formato inválido')
       continue
     }
 
@@ -166,7 +236,15 @@ export async function sendBroadcast(ctx: ApiServiceCtx, body: BroadcastSendBody)
       results.push({ phone: r.phone, status: 'failed', error: lastError ?? 'Falha no envio' })
       failed++
     }
+    await persistRecipient(ctx, broadcastId, contactId, messageId, messageId ? null : (lastError ?? 'Falha no envio'))
   }
 
-  return { sent, failed, results }
+  // 6) Finaliza o status do broadcast (best-effort; counts vêm do trigger 003).
+  try {
+    await ctx.admin.from('broadcasts').update({ status: sent === 0 ? 'failed' : 'sent' }).eq('id', broadcastId)
+  } catch (e) {
+    console.error('[sendBroadcast] falha ao finalizar status (best-effort):', e)
+  }
+
+  return { sent, failed, results, broadcast_id: broadcastId }
 }
