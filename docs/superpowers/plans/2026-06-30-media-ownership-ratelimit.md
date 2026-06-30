@@ -144,7 +144,7 @@ describe('GET /api/whatsapp/media/[mediaId] — posse + rate limit', () => {
 - [ ] **Step 3: Rodar o teste pra ver falhar (RED)**
 
 Run: `npx vitest run "src/app/api/whatsapp/media/[mediaId]/route.test.ts"`
-Expected: FALHA nos casos 429 e 404 — a rota atual não faz rate limit nem checagem de posse, então cai direto no download e retorna 200 (o caso 200 já passa).
+Expected: FALHA nos casos 429 e 404. A rota atual não faz rate limit nem posse: nesses 2 casos o teste **não** stuba `getMediaUrl`, então a rota chega à Meta com `getMediaUrl` retornando `undefined` → `mediaInfo.url` estoura → catch → **500** (e `getMediaUrl` É chamado) → os dois asserts (`status` esperado 429/404 + `getMediaUrl not called`) falham. O caso 200 (que stuba os mocks) já passa no RED. RED genuíno de qualquer forma.
 
 - [ ] **Step 4: Implementar rate limit + posse na rota (GREEN)**
 
