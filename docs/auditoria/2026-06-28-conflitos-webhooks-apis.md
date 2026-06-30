@@ -17,22 +17,23 @@
 - **#4 (P1) `automations/[id]` tenancy** — rotas usam o client de sessão RLS-scoped (`ctx.supabase`) em vez de service-role + filtro `user_id`; GET=`requireActiveAccount`, mutações=`requireRole('admin')`. Qualquer admin gerencia automação de colega; DELETE dá 404 real. Sem migration. (PR #26)
 - **#5 (P2) divergência dos caminhos de envio (Opção 1)** — o broadcast **v1 (API)** passou a persistir `broadcasts` + `broadcast_recipients` (com `whatsapp_message_id`, via service-role) → status webhook + analytics funcionam pro v1; a rota de broadcast **interna** rejeita 422 template não-APPROVED. Sem migration. Unificação total (tirar persistência do client hook) fica como follow-up. (PR #27)
 - **#7 (P2) gate de aprovação em GETs** — 5 GETs (listas de automations/flows + flows/[id]/runs/templates) trocaram `auth.getUser()` cru por `requireActiveAccount()` → conta `pending`/`suspended` toma 403 (mesmo client de sessão → zero mudança de escopo RLS). Mutações/helpers intocados. Sem migration. (PR #28). *Follow-up: `whatsapp/config` GET ainda usa getUser cru; e endurecer `route-auth-guard` quando todos os GETs crus migrarem.* (PR #28)
+- **#8 (P2) `media/[mediaId]` posse + rate limit** — antes de servir o binário: rate limit por usuário (preset `media` 240/min → 429) → checagem de posse (`SELECT messages` por `media_url = /api/whatsapp/media/{id}` via RLS → 404 se não for da conta) → só então toca a Meta. `requireActiveAccount` já existia. Sem migration. Posse por-agente = follow-up (igual #21). (PR #29)
+- **#6 (P2) rodízio: cursor condicional + janela canônica** — a RPC `pick_next_agent_round_robin` ganhou assinatura de 2 args (`p_account_id, p_conversation_id`) que atribui a conversa **por `id`** numa transação (peek do cursor sob `FOR UPDATE` → `UPDATE conversations WHERE id=... AND assigned_agent_id IS NULL` → `GET DIAGNOSTICS` → avança o cursor **só se colar**) → fim do "queima vendedor" em corrida (sem double-assign, sem cursor preso). Janela canônica = **5min** na migration 038; `030`/`035` carimbadas SUPERSEDED. A 038 **coexiste** com a função de 1 arg (sem `DROP` → sem janela de incompat. no deploy). TS `assignNextAgent(db, accountId, conversationId)` virou wrapper fino; 3 callers passam o id da conversa (webhook/cron/engine). **Migration 038 — aplicação MANUAL antes/junto do merge.** (branch `feat/leads-round-robin-atomic`)
 - **Extra (mesma área, fora da lista original):** feed do agente n8n (payload `state`, **Pausar bot**), **token estático** `x-webhook-token` + **Rotacionar**, e **webhook bidirecional** (`message.sent`, `direction`, `sender`, enriquecimento: tags/deal/agente/CTWA/timestamp) — PRs #23 + #24 + filtro anti-loop no n8n (`vantage-crm-agente`).
 
 **⏳ PARCIAL:**
 - **#9 (P2)** — o gate 23505 elimina o double-count de `unread_count` **só na reentrega do mesmo `message_id`**. O race de 2 mensagens DISTINTAS concorrentes (read-modify-write em `route.ts:660`) **PERMANECE** → precisa de RPC atômica/`increment`.
-- **#6 (P2)** — a janela de presença já é 5min no ar (035 aplicada), MAS a `030.sql` no repo ainda tem `INTERVAL '15 minutes'` (drift se re-aplicar) e o **cursor do rodízio ainda avança incondicional** (fairness). Aberto.
 - **#12 (P3)** — `signature.ts` (HMAC outbound) removido; mas o **token CAPI/WhatsApp legado em texto plano** ainda é tolerado (sem job de migração forçada).
 
 **⬜ BACKLOG ABERTO — próximos (ordem sugerida pra retomar):**
-1. **#8 (P2) `media/[mediaId]`** — sem checagem de posse da mídia + sem rate limit (qualquer role).
-2. **#6 (P2)** — cursor do rodízio incondicional + remover a `030` com 15min (fonte única da janela).
-3. **#9 (P2)** — contadores atômicos (RPC `increment`).
-4. **#10 (P3)** — robustez dos crons (reaper de `running` órfão; `maxDuration`; backoff CAPI). *(Nota: o reaper do CAPI já saiu de graça no #2 via TTL do `claimed_at`.)*
-5. **#11 (P3)** — rate limit no `resend` CAPI + cobertura em mutações de flows/automations.
-6. **#12 (P3)** — job de migração forçada dos tokens legados em texto plano.
+1. **#9 (P2)** — contadores atômicos (RPC `increment`).
+2. **#10 (P3)** — robustez dos crons (reaper de `running` órfão; `maxDuration`; backoff CAPI). *(Nota: o reaper do CAPI já saiu de graça no #2 via TTL do `claimed_at`.)*
+3. **#11 (P3)** — rate limit no `resend` CAPI + cobertura em mutações de flows/automations.
+4. **#12 (P3)** — job de migração forçada dos tokens legados em texto plano.
 
-> **Pra retomar (pós-/compact):** o próximo natural é o **#8 (`media/[mediaId]` — posse + rate limit)** — P2. Cada item segue o mesmo fluxo do projeto: brainstorm → spec → plano → revisão adversarial → subagent-driven → PR. Specs/planos já entregues em `docs/superpowers/`. Migrations: **aplicação MANUAL** pelo Iago no SQL Editor (banco dedicado `mgmokvpjswtjxhqhnyps`).
+> **Pra retomar (pós-/compact):** restam **1 P2** (#9) e **3 P3** (#10, #11, #12). O próximo natural é o **#9 (contadores de conversa atômicos — `unread_count` read-modify-write em corrida)** — P2; precisa de migration (RPC `increment`). Cada item segue o mesmo fluxo do projeto: brainstorm → spec → plano → revisão adversarial → subagent-driven → PR. Specs/planos em `docs/superpowers/`. Migrations: **aplicação MANUAL** pelo Iago no SQL Editor (banco dedicado `mgmokvpjswtjxhqhnyps`).
+>
+> **Follow-ups do #6 (registrados na revisão final, fora de escopo):** (a) migration futura pra `DROP FUNCTION pick_next_agent_round_robin(UUID)` (a de 1 arg, órfã, com janela de 15min — footgun latente) após confirmar o código novo estável; (b) `resolveConversationId` (engine) lança em contato com conversa duplicada — sintoma do bug de conversa duplicada (`findOrCreateConversation` sem UNIQUE), não-regressão; (c) E2E manual obrigatório pós-038 (rajada na mesma conversa → cursor +1 exato) é a única verificação do invariante de cursor condicional.
 
 ---
 

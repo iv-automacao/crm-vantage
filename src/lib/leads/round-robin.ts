@@ -17,8 +17,8 @@ export function pickIndex(cursor: number, poolSize: number): number {
 
 /**
  * Janela de presença: tempo máximo desde o último heartbeat pra contar como
- * "online agora". ESPELHA o INTERVAL do SQL pick_next_agent_round_robin
- * (migration 035) — manter os dois em sincronia.
+ * "online agora". ESPELHA a janela canônica da migration 038
+ * (pick_next_agent_round_robin, INTERVAL '5 minutes') — manter os dois em sincronia.
  */
 export const PRESENCE_WINDOW_MS = 5 * 60 * 1000
 
@@ -49,38 +49,29 @@ export function isAvailableNow(
 }
 
 /**
- * Chama a RPC Postgres `pick_next_agent_round_robin` para selecionar o próximo
- * agente disponível em rodízio atômico, e atualiza a conversa correspondente.
+ * Chama a RPC Postgres `pick_next_agent_round_robin` pra escolher o próximo
+ * agente em rodízio e ATRIBUIR a conversa (por id) de forma atômica (migration 038).
  *
- * Retorna `{ agentId: null }` se a RPC não encontrar agente disponível.
+ * A RPC faz tudo numa transação: monta o pool, atribui a conversa só se ela
+ * ainda não tem dono (guard `assigned_agent_id IS NULL` por dentro) e só AVANÇA
+ * o cursor do rodízio quando a atribuição cola. Assim uma rajada de mensagens
+ * do mesmo contato novo na mesma conversa nunca "queima" um agente (cursor +1, não +2).
+ *
+ * Retorna `{ agentId: null }` quando ninguém está disponível OU quando a
+ * conversa já tinha dono. O caller (webhook) faz o fallback de
+ * `autoassign_waiting` — no-op se a conversa já tem dono.
  */
 export async function assignNextAgent(
   db: AdminDb,
   accountId: string,
-  contactId: string,
+  conversationId: string,
 ): Promise<{ agentId: string | null }> {
-  // Drift conhecido (aceitável no escopo enxuto): a RPC avança o cursor e o
-  // UPDATE abaixo são duas instruções. Se o MESMO contato novo manda duas
-  // mensagens em lambdas concorrentes, ambas passam o gate de `null`, a RPC
-  // roda duas vezes (cursor +2, escolhe X e Y) mas só o primeiro UPDATE vence
-  // o guard `.is(null)` — o lead fica com UM dono (sem duplo-assign), porém Y
-  // é pulado no rodízio. Auto-corrige ao longo do tempo. Pra fairness estrita,
-  // mover o UPDATE pra dentro da RPC e só avançar o cursor quando afetar linha.
   const { data: agentId, error } = await db.rpc('pick_next_agent_round_robin', {
     p_account_id: accountId,
+    p_conversation_id: conversationId,
   })
 
   if (error || !agentId) return { agentId: null }
-
-  // Guarda condicional: o `.is('assigned_agent_id', null)` impede sobrescrever
-  // uma atribuição manual feita pelo usuário via passo `assign_conversation`
-  // no modo `specific`. Assim o rodízio não colide com atribuições explícitas.
-  await db
-    .from('conversations')
-    .update({ assigned_agent_id: agentId, autoassign_waiting: false })
-    .eq('account_id', accountId)
-    .eq('contact_id', contactId)
-    .is('assigned_agent_id', null)
 
   return { agentId: agentId as string }
 }
