@@ -161,6 +161,11 @@ export const RATE_LIMITS = {
   dealsRead: { limit: 240, windowMs: 60_000 },
   /** Leitura de conversas/mensagens via API. Por conta. */
   conversationsRead: { limit: 240, windowMs: 60_000 },
+  /** Download de mídia do WhatsApp pelo proxy. Por usuário — humano no inbox
+   *  carrega várias mídias ao abrir conversa (e elas ficam em cache no
+   *  navegador, então re-render não reconta). 240/min trava download em massa
+   *  sem atrapalhar uso normal. */
+  media: { limit: 240, windowMs: 60_000 },
   /** Disparo de broadcast via API. APERTADO (custa $) — por conta. */
   broadcastSend: { limit: 10, windowMs: 60_000 },
   /** Presença do vendedor: toggle Disponível + heartbeat de atividade.
