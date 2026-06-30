@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { getTemplate } from '@/lib/automations/templates'
 import { insertSteps, type BuilderStepInput } from '@/lib/automations/steps-tree'
@@ -7,24 +6,25 @@ import {
   validateStepsForActivation,
   validateTriggerForActivation,
 } from '@/lib/automations/validate'
-import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { requireActiveAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
 
 export async function GET() {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const { data, error } = await supabase
-    .from('automations')
-    .select('*')
-    .order('created_at', { ascending: false })
-  if (error) {
-    console.error('[GET /api/automations] DB error:', error.message)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  try {
+    // Muro de conta ativa: pending/suspended não lê (mesmo client de sessão →
+    // RLS segue escopando por conta).
+    const { supabase } = await requireActiveAccount()
+    const { data, error } = await supabase
+      .from('automations')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (error) {
+      console.error('[GET /api/automations] DB error:', error.message)
+      return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    }
+    return NextResponse.json({ automations: data ?? [] })
+  } catch (err) {
+    return toErrorResponse(err)
   }
-  return NextResponse.json({ automations: data ?? [] })
 }
 
 export async function POST(request: Request) {

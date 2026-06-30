@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { getFlowTemplate } from '@/lib/flows/templates'
-import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { requireActiveAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
 
 /**
  * GET /api/flows — list the caller's flows.
@@ -29,20 +29,19 @@ async function requireUser(): Promise<
 }
 
 export async function GET() {
-  const guard = await requireUser()
-  if (!guard.ok) {
-    return NextResponse.json(guard.body, { status: guard.status })
+  try {
+    const { supabase } = await requireActiveAccount()
+    const { data, error } = await supabase
+      .from('flows')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    return NextResponse.json({ flows: data ?? [] })
+  } catch (err) {
+    return toErrorResponse(err)
   }
-  const { supabase } = guard
-
-  const { data, error } = await supabase
-    .from('flows')
-    .select('*')
-    .order('created_at', { ascending: false })
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
-  return NextResponse.json({ flows: data ?? [] })
 }
 
 export async function POST(request: Request) {
