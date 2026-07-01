@@ -11,6 +11,7 @@ import { buildMessageEventPayload, dispatchMessageEvent } from '@/lib/webhooks/d
 import { buildConversationContext } from '@/lib/webhooks/enrich'
 import { captureCtwaReferral } from '@/lib/capi/referral'
 import { assignNextAgent } from '@/lib/leads/round-robin'
+import { incrementConversationUnread } from '@/lib/conversations/increment-unread'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -645,20 +646,14 @@ async function processMessage(
   // conversão pra Meta quando o negócio fechar (CAPI).
   await captureCtwaReferral(supabaseAdmin(), contactRecord.id, message)
 
-  // Update conversation
-  const { error: convError } = await supabaseAdmin()
-    .from('conversations')
-    .update({
-      last_message_text: contentText || `[${message.type}]`,
-      last_message_at: new Date().toISOString(),
-      unread_count: (conversation.unread_count || 0) + 1,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', conversation.id)
-
-  if (convError) {
-    console.error('Error updating conversation:', convError)
-  }
+  // Incremento ATÔMICO do unread_count + refresh dos campos de resumo (RPC da
+  // migration 039). Substitui o read-modify-write em memória, que perdia
+  // incremento sob 2 mensagens distintas concorrentes.
+  await incrementConversationUnread(
+    supabaseAdmin(),
+    conversation.id,
+    contentText || `[${message.type}]`,
+  )
 
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (via the aggregate
